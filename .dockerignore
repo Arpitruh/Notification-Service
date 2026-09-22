@@ -1,0 +1,14 @@
+node_modules
+dist
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+*.log
+.kiro
+Dockerfile
+.dockerignore
+README.md
+**/*.test.ts
+npm-debug.log*

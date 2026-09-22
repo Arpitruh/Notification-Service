@@ -1,0 +1,66 @@
+# Render Blueprint for the Notification Service.
+# Provisions a Docker-based web service (API + background worker in one process)
+# and a managed Key Value (Redis-compatible) instance for the BullMQ queue.
+#
+# Postgres is hosted externally on Neon, so DATABASE_URL is set as a secret in
+# the Render dashboard (marked sync: false below) rather than provisioned here.
+
+services:
+  - type: web
+    name: notification-service
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Render injects PORT; the app already reads process.env.PORT.
+      - key: PORT
+        value: 4000
+
+      # --- Redis (BullMQ) — wired from the Key Value instance below ---
+      - key: REDIS_HOST
+        fromService:
+          type: keyvalue
+          name: notification-redis
+          property: host
+      - key: REDIS_PORT
+        fromService:
+          type: keyvalue
+          name: notification-redis
+          property: port
+
+      # --- Secrets: set these in the Render dashboard (never commit values) ---
+      - key: DATABASE_URL
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_SECURE
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_PHONE_NUMBER
+        sync: false
+
+  - type: keyvalue
+    name: notification-redis
+    plan: free
+    region: oregon
+    # BullMQ requires that keys are never evicted, or jobs can be silently dropped.
+    maxmemoryPolicy: noeviction
+    # Restrict inbound access. The web service connects over Render's private
+    # network; this list governs public internet access. Empty = no public access.
+    ipAllowList: []

@@ -1,0 +1,51 @@
+datasource db {
+  provider = "postgresql"
+  // Remove the url line completely
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+enum Channel {
+  email
+  sms
+  push
+}
+
+enum NotificationStatus {
+  queued
+  processing
+  sent
+  failed
+  dead_letter
+}
+
+model Notification {
+  id              String             @id @default(uuid())
+  idempotency_key String             @unique
+  recipient       String
+  channel         Channel
+  template_id     String
+  payload_data    Json
+  status          NotificationStatus @default(queued)
+  attempts        Int                @default(0)
+  priority        Int                @default(0)
+  scheduled_for   DateTime?
+  caller_service  String
+  error_log       Json?
+  created_at      DateTime           @default(now())
+  updated_at      DateTime           @updatedAt
+
+  @@index([idempotency_key])
+  @@index([status])
+}
+
+model Suppression {
+  id         String   @id @default(uuid())
+  recipient  String
+  channel    Channel
+  reason     String
+  created_at DateTime @default(now())
+
+  @@unique([recipient, channel])
+}
