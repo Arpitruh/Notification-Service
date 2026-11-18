@@ -1,20 +1,15 @@
 import { Router } from 'express';
-import rateLimit from 'express-rate-limit';
-import { sendNotification } from '../controllers/notification.controller.js';
+import { clientQuotaLimiter } from '../middleware/client-quota.middleware.js';
+import { sendNotification, getNotificationStatus } from '../controllers/notification.controller.js';
+import { requireNotificationClient, requireClientPermission } from '../middleware/client-auth.middleware.js';
 import {
   validateSendNotification,
   validateTemplate,
 } from '../middleware/validate.middleware.js';
 
-const sendLimiter = rateLimit({
-  windowMs: 60_000,
-  limit: 100,
-  standardHeaders: 'draft-7',
-  legacyHeaders: false,
-  message: { error: 'Too many requests, please retry later.' },
-});
-
 const router = Router();
-router.post('/send', sendLimiter, validateSendNotification, validateTemplate, sendNotification);
+router.use(requireNotificationClient);
+router.post('/send', validateSendNotification, requireClientPermission, validateTemplate, clientQuotaLimiter, sendNotification);
+router.get('/:id', getNotificationStatus);
 
 export const notificationRoutes = router;

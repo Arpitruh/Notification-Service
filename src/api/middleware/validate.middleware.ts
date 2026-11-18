@@ -9,12 +9,19 @@ import {
 
 const schema = z.object({
   recipient: z.string().min(1),
-  channel: z.enum(['email', 'sms', 'push']),
-  templateId: z.string().min(1),
+  channel: z.enum(['email', 'sms']), // Push delivery is not implemented; reject up front.
+  templateId: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'Invalid template ID'),
   payloadData: z.record(z.string(), z.any()),
-  idempotencyKey: z.string().min(1).optional(),
-  priority: z.number().int().optional(),
+  idempotencyKey: z.string().min(1).max(200).optional(),
+  priority: z.number().int().min(0).max(100).optional(),
   scheduledFor: z.iso.datetime().optional(),
+}).superRefine((value, ctx) => {
+  if (value.channel === 'email' && !z.email().safeParse(value.recipient).success) {
+    ctx.addIssue({ code: 'custom', message: 'Recipient must be an email address.', path: ['recipient'] });
+  }
+  if (value.channel === 'sms' && !/^\+[1-9]\d{7,14}$/.test(value.recipient)) {
+    ctx.addIssue({ code: 'custom', message: 'SMS recipient must be an E.164 phone number.', path: ['recipient'] });
+  }
 });
 
 export type SendNotificationInput = z.infer<typeof schema>;
@@ -38,12 +45,7 @@ export const validateSendNotification = (req: Request, res: Response, next: Next
 export const validateTemplate = (req: Request, res: Response, next: NextFunction): void => {
   const { channel, templateId, payloadData } = req.body as SendNotificationInput;
 
-  // Only email is template-rendered today. Other channels pass through untouched.
-  if (channel !== 'email') {
-    next();
-    return;
-  }
-
+  // Email and SMS both use explicitly versioned file-based templates.
   try {
     templateRenderer.assertExists(templateId);
     templateRenderer.validateVariables(templateId, payloadData);

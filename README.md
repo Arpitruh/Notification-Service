@@ -1,8 +1,22 @@
 # Notification Service
 
-A notification microservice with an HTTP API and a BullMQ background worker.
-Sends templated emails (file-based Handlebars templates) and mock SMS, backed by
+A reusable, **backend-authenticated** notification microservice with an HTTP API and a BullMQ background worker.
+Sends templated SMTP email and Twilio SMS (if configured), backed by
 Postgres (audit + idempotency) and Redis (job queue).
+
+**Integration and security:** Every sending backend needs its own 32+ character API key configured through `NOTIFICATION_CLIENTS_JSON`. Sending is disabled until clients are configured; do not expose API keys in frontend JavaScript. See [INTEGRATION_GUIDE.md](./INTEGRATION_GUIDE.md) for usage and Next.js examples.
+
+## Reuse across your applications
+
+Each backend authenticates using an independent `x-notification-api-key`. The
+service uses PostgreSQL audit records, Redis-based per-client minute/day quotas,
+caller-scoped idempotency, and status polling. No browser API keys are allowed.
+See [INTEGRATION_GUIDE.md](./INTEGRATION_GUIDE.md) for integration examples.
+
+**Important:** Before deploying this breaking auth change, configure
+`NOTIFICATION_CLIENTS_JSON` on Render; without it all send requests return
+503. A real SMTP sender and Twilio credentials are required for production
+email/SMS delivery. Never commit those credentials.
 
 ## Architecture
 
@@ -26,13 +40,19 @@ npx prisma migrate deploy # apply migrations to your database
 npm run dev               # starts API + worker with hot reload
 ```
 
-Send a test email:
+Send a test email (server-only API key required):
 
 ```bash
 curl -X POST http://localhost:4000/api/v1/notifications/send \
   -H "Content-Type: application/json" \
+  -H "x-notification-api-key: $NOTIFICATION_API_KEY" \
+  -H "x-notification-api-key: $NOTIFICATION_API_KEY" \\
   -d '{"recipient":"you@example.com","channel":"email","templateId":"welcome","payloadData":{"name":"Arpit","dashboardUrl":"https://app.example.com"}}'
 ```
+
+Set `NOTIFICATION_CLIENTS_JSON` in the Notification Service environment, and put only your consumer key in `NOTIFICATION_API_KEY` locally. `GET /api/v1/notifications/:id` returns status for the authenticated caller. An explicit `idempotencyKey` is required for safe retries; without one, each request is intentional.
+
+**SMS:** The current provider is mock-only. Production SMS requests are blocked rather than falsely marked as delivered. `push` is unsupported.
 
 ## Scripts
 
@@ -62,7 +82,9 @@ Postgres is external (Neon), so `DATABASE_URL` is provided as a Render secret.
    dashboard for the web service:
    - `DATABASE_URL` — Neon pooled connection string
    - `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`
-   - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`
+   - `NOTIFICATION_CLIENTS_JSON` — required authorized backend clients
+   - optional `METRICS_API_KEY` — metrics protection
+   - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` (real SMS integration remains future work)
    `REDIS_HOST` and `REDIS_PORT` are wired automatically from the Key Value
    instance.
 4. Deploy. On each release the container entrypoint runs
@@ -89,3 +111,23 @@ Add a template by creating a pair of files in `src/templates/`:
 
 Requests with an unknown `templateId` or missing required variables are rejected
 with HTTP 400 before any job is enqueued.
+
+### Delivery recovery and quotas
+
+The queue uses one deterministic BullMQ job ID per notification, preventing
+duplicate queued jobs for the same audit record. A background reconciliation
+sweep can re-enqueue orphaned **queued** records after a crash, but deliberately
+does not retry ambiguous **processing** records (the provider may have delivered).
+For delivery guarantees under very high concurrency, implement transactional
+outbox and provider-specific delivery receipts.
+
+Set `CLIENT_RATE_LIMIT_PER_MINUTE` and `CLIENT_DAILY_QUOTA` for a shared
+Redis-backed limit per registered calling service. A failed Redis connection
+returns 503 and does not bypass quota enforcement. The API exposes safe
+GET /api/v1/notifications/:id status for the owning client only.
+
+SMS: configure `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and
+`TWILIO_PHONE_NUMBER` for real delivery. Example `sms-code` template needs
+`code` and `expiresInMinutes`, with an E.164 recipient such as
+`+15551234567`. Without credentials the development mock is not real delivery;
+production refuses SMS requests.
