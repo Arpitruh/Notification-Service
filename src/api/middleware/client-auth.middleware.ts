@@ -34,9 +34,10 @@ export function requireClientPermission(req: Request, res: Response, next: NextF
     res.status(403).json({ error: 'This client is not permitted to use that channel or template.' });
     return;
   }
-  // SMS currently uses a mock sender. Never claim real delivery in production.
-  if (body.channel === 'sms' && process.env.NODE_ENV === 'production') {
-    res.status(503).json({ error: 'SMS is unavailable until a real provider is configured.' });
+  // A production SMS must use the real Twilio provider, not the dev mock.
+  if (body.channel === 'sms' && process.env.NODE_ENV === 'production' &&
+      (!ENV.TWILIO.accountSid || !ENV.TWILIO.authToken || !ENV.TWILIO.phoneNumber)) {
+    res.status(503).json({ error: 'SMS provider is not configured.' });
     return;
   }
   next();

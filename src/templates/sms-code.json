@@ -1,0 +1,7 @@
+{
+  "subject": "SMS verification code",
+  "requiredVariables": [
+    "code",
+    "expiresInMinutes"
+  ]
+}
