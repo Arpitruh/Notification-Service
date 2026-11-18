@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
-import { notificationQueue } from '../../queues/notification.queue.js';
+import { addNotificationJob } from '../../services/queue-recovery.js';
 import { notificationsEnqueued } from '../../metrics.js';
 import type { SendNotificationInput } from '../middleware/validate.middleware.js';
 import type { NotificationClient } from '../../lib/client-auth.js';
@@ -80,8 +80,7 @@ export const sendNotification = async (req: Request, res: Response): Promise<voi
 
   const delay = scheduledDate ? Math.max(0, scheduledDate.getTime() - Date.now()) : 0;
   try {
-    await notificationQueue.add(
-      'dispatch',
+    await addNotificationJob(
       { notificationId, recipient, channel, templateId, payloadData },
       { delay, priority: normalizedPriority },
     );
