@@ -1,8 +1,10 @@
 # Notification Service
 
-A notification microservice with an HTTP API and a BullMQ background worker.
+A reusable, **backend-authenticated** notification microservice with an HTTP API and a BullMQ background worker.
 Sends templated emails (file-based Handlebars templates) and mock SMS, backed by
 Postgres (audit + idempotency) and Redis (job queue).
+
+**Integration and security:** Every sending backend needs its own 32+ character API key configured through `NOTIFICATION_CLIENTS_JSON`. Sending is disabled until clients are configured; do not expose API keys in frontend JavaScript. See [INTEGRATION_GUIDE.md](./INTEGRATION_GUIDE.md) for usage and Next.js examples.
 
 ## Architecture
 
@@ -31,8 +33,13 @@ Send a test email:
 ```bash
 curl -X POST http://localhost:4000/api/v1/notifications/send \
   -H "Content-Type: application/json" \
+  -H "x-notification-api-key: $NOTIFICATION_API_KEY" \\
   -d '{"recipient":"you@example.com","channel":"email","templateId":"welcome","payloadData":{"name":"Arpit","dashboardUrl":"https://app.example.com"}}'
 ```
+
+Set `NOTIFICATION_CLIENTS_JSON` in the Notification Service environment, and put only your consumer key in `NOTIFICATION_API_KEY` locally. `GET /api/v1/notifications/:id` returns status for the authenticated caller. An explicit `idempotencyKey` is required for safe retries; without one, each request is intentional.
+
+**SMS:** The current provider is mock-only. Production SMS requests are blocked rather than falsely marked as delivered. `push` is unsupported.
 
 ## Scripts
 
@@ -62,7 +69,9 @@ Postgres is external (Neon), so `DATABASE_URL` is provided as a Render secret.
    dashboard for the web service:
    - `DATABASE_URL` — Neon pooled connection string
    - `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`
-   - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`
+   - `NOTIFICATION_CLIENTS_JSON` — required authorized backend clients
+   - optional `METRICS_API_KEY` — metrics protection
+   - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` (real SMS integration remains future work)
    `REDIS_HOST` and `REDIS_PORT` are wired automatically from the Key Value
    instance.
 4. Deploy. On each release the container entrypoint runs
