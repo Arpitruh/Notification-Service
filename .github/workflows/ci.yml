@@ -7,9 +7,29 @@ permissions:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: notification_ci
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d notification_ci" --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: [6379:6379]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       NODE_ENV: test
-      DATABASE_URL: postgresql://test:test@127.0.0.1:5432/notification_ci
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/notification_ci?sslmode=disable
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: '6379'
+      RUN_INTEGRATION_TESTS: '1'
+      NOTIFICATION_CLIENTS_JSON: '[{"id":"auth-service","key":"ci-test-notification-auth-service-long-key","channels":["email"],"templates":["welcome","forgot-password"]},{"id":"second-service","key":"ci-test-notification-second-service-long-key","channels":["email"],"templates":["welcome"]}]'
+      METRICS_API_KEY: ci-test-notification-metrics-key-long-value
     steps:
       - uses: actions/checkout@v4
         with:
@@ -20,6 +40,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx prisma generate
+      - run: npx prisma migrate deploy
       - run: npx tsc --noEmit
       - run: npm test
       - run: npm run build

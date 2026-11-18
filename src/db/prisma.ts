@@ -30,7 +30,10 @@ const config: PoolConfig = {
   user: decodeURIComponent(url.username),
   password: decodeURIComponent(url.password),
   database: url.pathname.slice(1),
-  ssl: { rejectUnauthorized: true, servername: originalHost },
+  // TLS is mandatory in production. Local ephemeral Postgres in CI may opt out.
+  ssl: url.searchParams.get('sslmode') === 'disable' && process.env.NODE_ENV !== 'production'
+    ? false
+    : { rejectUnauthorized: true, servername: originalHost },
 };
 
 const pool = new Pool(config);
