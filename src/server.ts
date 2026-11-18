@@ -21,7 +21,7 @@ app.get('/health', (_req: Request, res: Response) => {
 
 app.get('/ready', async (_req: Request, res: Response) => {
   try {
-    await Promise.all([prisma.$queryRaw`SELECT 1`, notificationQueue.client.then((client) => client.ping())]);
+    await Promise.all([prisma.$queryRaw`SELECT 1`, notificationQueue.getJobCounts()]);
     res.status(200).json({ status: 'READY', database: 'connected' });
   } catch (err) {
     res.status(503).json({ status: 'NOT_READY' });
