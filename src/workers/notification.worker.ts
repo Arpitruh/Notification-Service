@@ -108,7 +108,7 @@ export function startNotificationWorker(): Worker<NotificationJobData> {
       // Transient failure; a retry is still pending.
       await prisma.notification.update({
         where: { id: job.data.notificationId },
-        data: { status: 'failed', error_log: { message: err.message } },
+        data: { status: 'failed', error_log: { reason: 'DELIVERY_RETRY_PENDING' } },
       });
     }
   });

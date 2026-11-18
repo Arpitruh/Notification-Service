@@ -84,8 +84,11 @@ export async function queueWelcome(email: string, userId: string) {
   sent to users; server-to-server HTTPS requests do not need browser CORS.
 - Per-client channel and optional template allowlists are enforced. App roles,
   tenant ownership and permission to send emails still belong to each app.
-- SMS is **mocked** in the current repository. It is blocked in production
-  rather than reporting fake success. Push is unsupported and rejected.
+- SMS uses **Twilio in production** when the three `TWILIO_*` credentials
+  are configured. The `sms-code` template supports `code` and
+  `expiresInMinutes` and requires an E.164 phone number. Without Twilio,
+  production refuses SMS. Development's mocked SMS is **not real delivery**.
+  Push is unsupported and rejected.
 - `/metrics` requires an independent `METRICS_API_KEY` (32+ characters);
   when unset, the endpoint returns 404.
 - `/ready` checks both PostgreSQL and Redis without leaking connection errors.
