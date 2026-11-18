@@ -21,6 +21,7 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)('authenticated notification 
     queue = q.notificationQueue;
     await prisma.$queryRaw`SELECT 1`;
     server = createApp().listen(0, '127.0.0.1');
+    await new Promise<void>((resolve) => server.once('listening', resolve));
     const addr = server.address();
     if (!addr || typeof addr === 'string') throw new Error('No local test port');
     base = 'http://127.0.0.1:' + addr.port;
