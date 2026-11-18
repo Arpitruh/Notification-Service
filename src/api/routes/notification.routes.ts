@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { sendNotification } from '../controllers/notification.controller.js';
+import { sendNotification, getNotificationStatus } from '../controllers/notification.controller.js';
+import { requireNotificationClient, requireClientPermission } from '../middleware/client-auth.middleware.js';
 import {
   validateSendNotification,
   validateTemplate,
@@ -15,6 +16,8 @@ const sendLimiter = rateLimit({
 });
 
 const router = Router();
-router.post('/send', sendLimiter, validateSendNotification, validateTemplate, sendNotification);
+router.use(requireNotificationClient);
+router.post('/send', sendLimiter, validateSendNotification, requireClientPermission, validateTemplate, sendNotification);
+router.get('/:id', getNotificationStatus);
 
 export const notificationRoutes = router;

@@ -100,7 +100,7 @@ export function startNotificationWorker(): Worker<NotificationJobData> {
         where: { id: notificationId },
         data: {
           status: 'dead_letter',
-          error_log: { message: err.message, stack: err.stack },
+          error_log: { reason: 'DELIVERY_FAILED' },
         },
       });
       notificationsProcessed.inc({ channel, outcome: 'dead_letter' });

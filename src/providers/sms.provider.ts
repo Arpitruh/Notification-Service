@@ -4,6 +4,10 @@ export class SmsProvider {
   channel = 'sms' as const;
 
   async send(payload: CompiledNotification): Promise<DeliveryResult> {
+    // A mock is not real delivery: never report a fake successful SMS in production.
+    if (process.env.NODE_ENV === 'production') {
+      return { success: false, error: 'SMS provider is not configured for real delivery' };
+    }
     try {
       console.log('\n----------------------------------------');
       console.log('📱 [FREE MOCK SMS GATEWAY] Outbound Text Message:');

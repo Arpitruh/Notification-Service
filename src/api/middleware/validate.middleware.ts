@@ -9,11 +9,11 @@ import {
 
 const schema = z.object({
   recipient: z.string().min(1),
-  channel: z.enum(['email', 'sms', 'push']),
-  templateId: z.string().min(1),
+  channel: z.enum(['email', 'sms']), // Push delivery is not implemented; reject up front.
+  templateId: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'Invalid template ID'),
   payloadData: z.record(z.string(), z.any()),
-  idempotencyKey: z.string().min(1).optional(),
-  priority: z.number().int().optional(),
+  idempotencyKey: z.string().min(1).max(200).optional(),
+  priority: z.number().int().min(0).max(100).optional(),
   scheduledFor: z.iso.datetime().optional(),
 });
 

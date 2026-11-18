@@ -21,6 +21,8 @@ const envSchema = z.object({
   TWILIO_ACCOUNT_SID: z.string().default(''),
   TWILIO_AUTH_TOKEN: z.string().default(''),
   TWILIO_PHONE_NUMBER: z.string().default(''),
+  NOTIFICATION_CLIENTS_JSON: z.string().optional(),
+  METRICS_API_KEY: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -35,6 +37,8 @@ const raw = parsed.data;
 
 export const ENV = {
   PORT: raw.PORT,
+  NOTIFICATION_CLIENTS_JSON: raw.NOTIFICATION_CLIENTS_JSON,
+  METRICS_API_KEY: raw.METRICS_API_KEY,
   DATABASE_URL: raw.DATABASE_URL,
   REDIS_HOST: raw.REDIS_HOST,
   REDIS_PORT: raw.REDIS_PORT,
