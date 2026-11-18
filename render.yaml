@@ -34,6 +34,10 @@ services:
           property: port
 
       # --- Secrets: set these in the Render dashboard (never commit values) ---
+      - key: NOTIFICATION_CLIENTS_JSON
+        sync: false
+      - key: METRICS_API_KEY
+        sync: false
       - key: DATABASE_URL
         sync: false
       - key: SMTP_HOST
