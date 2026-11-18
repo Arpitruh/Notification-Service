@@ -61,6 +61,8 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)('authenticated notification 
     expect(created.status).toBe(202);
     const result = await created.json() as { notificationId: string };
     expect(result.notificationId).toBeTruthy();
+    const job = await queue.getJob(result.notificationId);
+    expect(job?.id).toBe(result.notificationId);
     expect((await send(body, firstKey)).status).toBe(200);
     expect((await send({ ...body, recipient: 'other@example.com' }, firstKey)).status).toBe(409);
 
@@ -75,6 +77,21 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)('authenticated notification 
 
     // The same caller-supplied key cannot collide across separate client IDs.
     expect((await send(body, secondKey)).status).toBe(202);
+  });
+
+  it('accepts the Auth Service forgot-password template payload', async () => {
+    const response = await send({
+      recipient: 'registered@example.com',
+      channel: 'email',
+      templateId: 'forgot-password',
+      payloadData: {
+        name: 'there',
+        resetUrl: 'https://app.example.com/reset-password?token=placeholder',
+        expiresInMinutes: 30,
+      },
+      idempotencyKey: 'password-reset:' + randomUUID(),
+    }, firstKey);
+    expect(response.status).toBe(202);
   });
 
   it('checks database and Redis readiness and protects metrics', async () => {
