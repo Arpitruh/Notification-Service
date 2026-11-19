@@ -47,6 +47,14 @@ export const validateTemplate = async (req: Request, res: Response, next: NextFu
   }
 
   try {
+    const result = await renderApplicationMail(res.locals.applicationName as string, templateId, payloadData);
+    if (result.foundApp) {
+      if (!result.rendered) { res.status(400).json({ error: result.error || 'Template unavailable' }); return; }
+      res.locals.renderedEmail = result.rendered;
+      next();
+      return;
+    }
+    // Legacy bootstrap application without a dashboard database record.
     templateRenderer.assertExists(templateId);
     templateRenderer.validateVariables(templateId, payloadData);
     next();

@@ -53,6 +53,8 @@ small,.hint{color:var(--muted)}
 <button class="nav" data-section="team">♧ Team Access</button>
 <button class="nav" data-section="audit">☷ Audit History</button>
 <button class="nav" data-section="applications">▦ Applications</button>
+<button class="nav" data-section="settings">⚙ App Settings</button>
+<button class="nav" data-section="credentials">⚿ API Keys</button>
 <button id="logout" class="secondary" style="margin-top:24px">Log out</button></aside>
 <main><div class="top"><div><h1 id="pageTitle">Mail Templates</h1><p>Everything organized by application.</p></div>
 <div style="min-width:220px"><label>Selected application</label><select id="appSelect"></select></div></div>
@@ -71,7 +73,7 @@ function panel(){const root=$('body');root.replaceChildren();return root}
 function field(form,label,type,value='',name=label){const box=el('div',undefined,{class:'field'});box.append(el('label',label));const input=el(type==='textarea'?'textarea':'input');if(type!=='textarea')input.type=type;input.name=name;input.value=value;input.required=label.includes('*');box.append(input);form.append(box);return input}
 async function api(path,opts={}){const response=await fetch('/api/v1/dashboard'+path,{...opts,headers:{'Content-Type':'application/json',Authorization:'Bearer '+state.token,...opts.headers}});if(response.status===204)return{};const data=await response.json();if(!response.ok)throw Error(data.error||'Request failed');return data}
 async function reloadApps(){const data=await api('/applications');state.apps=data.applications;const sel=$('appSelect');const previous=state.appId;sel.replaceChildren();data.applications.forEach(a=>sel.append(el('option',a.name+' ('+a.slug+')',{value:a.id})));state.appId=data.applications.some(a=>a.id===previous)?previous:data.applications[0]?.id||'';sel.value=state.appId}
-async function render(){const titles={templates:'Mail Templates',users:'Application Users',team:'Team Access',audit:'Audit History',applications:'Applications'};$('pageTitle').textContent=titles[state.section];document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n.dataset.section===state.section));try{if(state.section==='applications')return await apps();if(!state.appId){panel().append(el('p','No applications available. A platform administrator must create one.'));return}if(state.section==='templates')await templates();if(state.section==='users')await users();if(state.section==='team')await team();if(state.section==='audit')await audit()}catch(e){panel().append(el('p',e.message));show(e.message)}}
+async function render(){const titles={templates:'Mail Templates',users:'Application Users',team:'Team Access',audit:'Audit History',applications:'Applications',settings:'Application Settings',credentials:'API Keys'};$('pageTitle').textContent=titles[state.section];document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n.dataset.section===state.section));try{if(state.section==='applications')return await apps();if(!state.appId){panel().append(el('p','No applications available. A platform administrator must create one.'));return}if(state.section==='templates')await templates();if(state.section==='users')await users();if(state.section==='team')await team();if(state.section==='audit')await audit();if(state.section==='settings')await settings();if(state.section==='credentials')await credentials()}catch(e){panel().append(el('p',e.message));show(e.message)}}
 async function apps(){const p=panel();p.append(header('Registered applications',[action('Add application',()=>appEditor())]));p.append(table(['Name','Slug','Status'],state.apps.map(a=>[a.name,a.slug,a.enabled?'Enabled':'Disabled'])))}
 async function appEditor(){const p=panel();p.append(header('New application',[action('Back',render,'secondary')]));const f=el('form');const slug=field(f,'Slug *','text');const name=field(f,'Name *','text');f.append(action('Create application',async()=>{try{await api('/applications',{method:'POST',body:JSON.stringify({slug:slug.value,name:name.value})});await reloadApps();show('Application created');render()}catch(e){show(e.message)}}));p.append(f)}
 async function templates(){const {templates:items}=await api('/applications/'+state.appId+'/templates');const p=panel();p.append(header('Email templates',[action('Create template',()=>templateEditor())]));if(!items.length){p.append(el('div','No templates yet. Create a draft to begin.',{class:'empty'}));return}p.append(table(['Name','Subject','Version','Status','Actions'],items.map(t=>[t.slug,t.subject,'v'+t.version,t.archived?'Archived':t.published?'Published':'Draft',(()=>{
@@ -83,6 +85,48 @@ async function users(){const {users:items}=await api('/applications/'+state.appI
 function userEditor(u){const p=panel();p.append(header('Add or update recipient',[action('Back',render,'secondary')]));const f=el('form');const id=field(f,'External user ID *','text',u?.external_id||'');if(u)id.disabled=true;const name=field(f,'Name','text',u?.name||'');const email=field(f,'Email','email',u?.email||'');f.append(action('Save user',async()=>{try{await api('/applications/'+state.appId+'/users',{method:'POST',body:JSON.stringify({externalId:id.value,name:name.value||null,email:email.value||null,enabled:u?.enabled??true})});show('User saved');render()}catch(e){show(e.message)}}));p.append(f)}
 async function team(){const {members}=await api('/applications/'+state.appId+'/members');const p=panel();p.append(header('Dashboard members',[action('Add or change member',memberEditor)]));p.append(table(['Auth Service subject','Role'],members.map(m=>[m.auth_subject,m.role])))}
 function memberEditor(){const p=panel();p.append(header('Grant application access',[action('Back',render,'secondary')]));const f=el('form');const sub=field(f,'Auth Service subject ID *','text');const role=el('select');['viewer','editor','admin','owner'].forEach(r=>role.append(el('option',r,{value:r})));f.append(role,action('Save member',async()=>{try{await api('/applications/'+state.appId+'/members',{method:'PUT',body:JSON.stringify({subject:sub.value,role:role.value})});show('Access updated');render()}catch(e){show(e.message)}}));p.append(f)}
+
+async function settings(){
+  const data=await api('/applications/'+state.appId+'/settings');const s=data.settings,p=panel();
+  p.append(header('Application settings'));
+  const f=el('form');const name=field(f,'Application name *','text',s.name);
+  const url=field(f,'Application dashboard / login URL','url',s.dashboardUrl||'');
+  const template=field(f,'Welcome template slug *','text',s.welcomeTemplate||'welcome');
+  const enabled=el('input');enabled.type='checkbox';enabled.style.width='auto';enabled.checked=s.welcomeEnabled;
+  const label=el('label','Automatically send welcome mail on user registration');label.prepend(enabled);f.append(label);
+  const info=el('p','An application must send a user.registered event from its backend using its API key. Template, URL and welcome toggle are controlled here.');
+  f.append(info,action('Save settings',async()=>{
+    try {
+      const body={name:name.value,dashboardUrl:url.value||null,welcomeTemplate:template.value,welcomeEnabled:enabled.checked};
+      await api('/applications/'+state.appId+'/settings',{method:'PATCH',body:JSON.stringify(body)});
+      show('Application settings saved');await reloadApps();render();
+    } catch(e){show(e.message)}
+  }));p.append(f);
+}
+async function credentials(){
+  const {credentials:items}=await api('/applications/'+state.appId+'/credentials');const p=panel();
+  p.append(header('Application API keys',[action('Generate key',()=>createCredential())]));
+  p.append(el('p','Keep API keys in your application backend only. Each key is shown once. Existing Render bootstrap keys still work until you rotate them.'));
+  p.append(table(['Label','Prefix','Created','Status','Actions'],items.map(k=>[
+    k.label,k.prefix,new Date(k.created_at).toLocaleString(),k.revoked_at?'Revoked':'Active',
+    k.revoked_at?'—':action('Revoke',async()=>{if(!confirm('Revoke this key? Applications using it will stop sending notifications.'))return;
+    try{await api('/applications/'+state.appId+'/credentials/'+k.id,{method:'DELETE'});show('Key revoked');render()}catch(e){show(e.message)}},'danger')
+  ])));
+}
+function createCredential(){
+  const p=panel();p.append(header('Generate API key',[action('Back',render,'secondary')]));
+  const f=el('form'),label=field(f,'Key label *','text','Backend integration');
+  f.append(action('Generate once',async()=>{
+    try{
+      const key=await api('/applications/'+state.appId+'/credentials',{method:'POST',body:JSON.stringify({label:label.value})});
+      p.replaceChildren(header('Your new API key'));
+      p.append(el('p','Copy this secret now. It cannot be recovered after leaving this screen.'));
+      const input=el('textarea');input.value=key.secret;input.readOnly=true;p.append(input);
+      p.append(action('Copy key',()=>navigator.clipboard.writeText(key.secret)),action('Done',render,'secondary'));
+    }catch(e){show(e.message)}
+  }));p.append(f);
+}
+
 async function audit(){const {events}=await api('/applications/'+state.appId+'/audit');const p=panel();p.append(header('Recent changes'));p.append(table(['When','Operator','Action','Resource'],events.map(e=>[new Date(e.created_at).toLocaleString(),e.actor,e.action,e.resource_id||'—'])))}
 $('loginForm').addEventListener('submit',async e=>{e.preventDefault();$('loginError').textContent='';try{const response=await fetch('/api/v1/dashboard/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:$('loginEmail').value,password:$('loginPassword').value})});const data=await response.json();if(!response.ok)throw Error(data.error||'Login failed');state.token=data.accessToken;$('loginPassword').value='';await reloadApps();$('login').classList.add('hidden');$('workspace').classList.remove('hidden');render()}catch(err){$('loginError').textContent=err.message}});
 $('logout').addEventListener('click',()=>{state.token='';$('workspace').classList.add('hidden');$('login').classList.remove('hidden')});

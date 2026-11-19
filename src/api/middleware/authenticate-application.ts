@@ -1,30 +1,41 @@
 import crypto from 'node:crypto';
 import type { Request, Response, NextFunction } from 'express';
 import { ENV } from '../../config/env.js';
+import { prisma } from '../../db/prisma.js';
 
-/**
- * Bootstrap application credentials. Production requires APP_API_KEYS.
- * Each key maps to a caller identity and is never returned in an HTTP response.
- * This will be replaced by DB-backed, rotatable keys in the dashboard phase.
- */
-const applications = Object.entries(ENV.APP_API_KEYS).map(([name, key]) => ({
-  name,
-  digest: crypto.createHash('sha256').update(key).digest(),
+const bootstrap = Object.entries(ENV.APP_API_KEYS).map(([name, key]) => ({
+  name, digest: crypto.createHash('sha256').update(key).digest(),
 }));
 
-export function authenticateApplication(req: Request, res: Response, next: NextFunction): void {
-  const presented = req.header('x-api-key');
-  if (!presented) {
-    res.status(401).json({ error: 'Missing application API key' });
-    return;
-  }
-  const digest = crypto.createHash('sha256').update(presented).digest();
-  const application = applications.find(({ digest: expected }) => crypto.timingSafeEqual(expected, digest));
-  if (!application) {
-    res.status(401).json({ error: 'Invalid application API key' });
-    return;
-  }
-  // Ignore caller-supplied X-Caller-Service to prevent identity spoofing.
-  res.locals.applicationName = application.name;
-  next();
+/**
+ * Database-managed keys are SHA-256 digests (plaintext is shown only on creation).
+ * Legacy environment keys remain valid during rollout; they can be rotated away
+ * once all callers switch to credentials created from the dashboard.
+ */
+export async function authenticateApplication(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const key = req.header('x-api-key');
+  if (!key) { res.status(401).json({ error: 'Missing application API key' }); return; }
+  try {
+    const digest = crypto.createHash('sha256').update(key).digest();
+    const credential = await prisma.applicationCredential.findUnique({
+      where: { key_hash: digest.toString('hex') },
+      include: { application: true },
+    });
+    if (credential && !credential.revoked_at && credential.application.enabled) {
+      res.locals.applicationName = credential.application.slug;
+      next();
+      return;
+    }
+    const legacy = bootstrap.find(({ digest: expected }) => crypto.timingSafeEqual(digest, expected));
+    if (legacy) {
+      const registered = await prisma.application.findUnique({ where: { slug: legacy.name } });
+      if (registered?.enabled === false) {
+        res.status(403).json({ error: 'Application disabled' }); return;
+      }
+      res.locals.applicationName = legacy.name;
+      next();
+      return;
+    }
+    res.status(401).json({ error: 'Invalid or revoked application API key' });
+  } catch (err) { next(err); }
 }

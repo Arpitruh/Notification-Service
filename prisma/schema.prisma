@@ -54,6 +54,10 @@ model Application {
   slug        String @unique
   name        String
   enabled     Boolean @default(true)
+  dashboard_url String?
+  welcome_enabled Boolean @default(false)
+  welcome_template String @default("welcome")
+  credentials ApplicationCredential[]
   created_at  DateTime @default(now())
   users       ApplicationUser[]
   templates   MailTemplate[]
@@ -114,4 +118,16 @@ model DashboardAudit {
   created_at     DateTime @default(now())
 
   @@index([application_id, created_at])
+}
+
+model ApplicationCredential {
+  id String @id @default(uuid())
+  application_id String
+  application Application @relation(fields: [application_id], references: [id], onDelete: Cascade)
+  key_hash String @unique
+  prefix String
+  label String
+  created_at DateTime @default(now())
+  revoked_at DateTime?
+  @@index([application_id])
 }

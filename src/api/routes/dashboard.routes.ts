@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import crypto from 'node:crypto';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { prisma } from '../../db/prisma.js';
@@ -195,5 +196,91 @@ dashboardRoutes.delete('/applications/:appId/members/:subject', async (req, res)
   }
   await prisma.dashboardMembership.delete({ where: { id: membership.id } });
   await audit(res, appId, 'member.remove', membership.id);
+  res.status(204).end();
+});
+
+const settingsSchema = z.object({
+  name: z.string().trim().min(2).max(120).optional(),
+  dashboardUrl: z.url().refine(v => {
+    const parsed = new URL(v);
+    return parsed.protocol === 'https:' || (parsed.protocol === 'http:' && parsed.hostname === 'localhost');
+  }).nullable().optional(),
+  welcomeEnabled: z.boolean().optional(),
+  welcomeTemplate: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/).optional(),
+  enabled: z.boolean().optional(),
+});
+
+dashboardRoutes.get('/applications/:appId/settings', async (req, res) => {
+  const appId = String(req.params.appId);
+  if (!await access(res, appId)) return fail(res, 403, 'Forbidden');
+  const app = await prisma.application.findUnique({ where: { id: appId } });
+  if (!app) return fail(res, 404, 'Application not found');
+  res.json({ settings: { name: app.name, slug: app.slug, enabled: app.enabled,
+    dashboardUrl: app.dashboard_url, welcomeEnabled: app.welcome_enabled, welcomeTemplate: app.welcome_template } });
+});
+dashboardRoutes.patch('/applications/:appId/settings', async (req, res) => {
+  const appId = String(req.params.appId);
+  if (!await access(res, appId, 'admin')) return fail(res, 403, 'Forbidden');
+  const body = parse(res, settingsSchema, req.body); if (!body) return;
+  const existing = await prisma.application.findUnique({ where: { id: appId } });
+  if (!existing) return fail(res, 404, 'Application not found');
+  const nextEnabled = body.welcomeEnabled ?? existing.welcome_enabled;
+  const nextTemplate = body.welcomeTemplate ?? existing.welcome_template;
+  const nextUrl = body.dashboardUrl === undefined ? existing.dashboard_url : body.dashboardUrl;
+  if (nextEnabled) {
+    if (!nextUrl) return fail(res, 400, 'Dashboard URL required before enabling welcome emails');
+    const template = await prisma.mailTemplate.findUnique({ where: {
+      application_id_slug: { application_id: appId, slug: nextTemplate },
+    } });
+    if (!template || template.archived || !template.published) {
+      return fail(res, 400, 'Publish the selected application template before enabling welcome emails');
+    }
+  }
+  const updated = await prisma.application.update({ where: { id: appId }, data: {
+    ...(body.name !== undefined ? { name: body.name } : {}),
+    ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
+    ...(body.dashboardUrl !== undefined ? { dashboard_url: body.dashboardUrl } : {}),
+    ...(body.welcomeEnabled !== undefined ? { welcome_enabled: body.welcomeEnabled } : {}),
+    ...(body.welcomeTemplate !== undefined ? { welcome_template: body.welcomeTemplate } : {}),
+  } });
+  await audit(res, appId, 'application.settings.update');
+  res.json({ settings: { name: updated.name, slug: updated.slug, enabled: updated.enabled,
+    dashboardUrl: updated.dashboard_url, welcomeEnabled: updated.welcome_enabled, welcomeTemplate: updated.welcome_template } });
+});
+dashboardRoutes.get('/applications/:appId/credentials', async (req, res) => {
+  const appId = String(req.params.appId);
+  if (!await access(res, appId, 'admin')) return fail(res, 403, 'Forbidden');
+  const credentials = await prisma.applicationCredential.findMany({
+    where: { application_id: appId },
+    select: { id: true, label: true, prefix: true, created_at: true, revoked_at: true },
+    orderBy: { created_at: 'desc' },
+  });
+  res.json({ credentials });
+});
+dashboardRoutes.post('/applications/:appId/credentials', async (req, res) => {
+  const appId = String(req.params.appId);
+  if (!await access(res, appId, 'admin')) return fail(res, 403, 'Forbidden');
+  const body = parse(res, z.object({ label: z.string().trim().min(2).max(100) }), req.body);
+  if (!body) return;
+  const app = await prisma.application.findUnique({ where: { id: appId } });
+  if (!app) return fail(res, 404, 'Application not found');
+  const secret = 'nfy_' + crypto.randomBytes(32).toString('base64url');
+  const credential = await prisma.applicationCredential.create({
+    data: { application_id: appId, label: body.label, prefix: secret.slice(0, 12),
+      key_hash: crypto.createHash('sha256').update(secret).digest('hex') },
+  });
+  await audit(res, appId, 'credential.create', credential.id);
+  res.set('Cache-Control', 'no-store');
+  res.status(201).json({ id: credential.id, prefix: credential.prefix, secret,
+    message: 'Copy this secret now. It cannot be viewed again.' });
+});
+dashboardRoutes.delete('/applications/:appId/credentials/:id', async (req, res) => {
+  const appId = String(req.params.appId), id = String(req.params.id);
+  if (!await access(res, appId, 'admin')) return fail(res, 403, 'Forbidden');
+  const changed = await prisma.applicationCredential.updateMany({
+    where: { id, application_id: appId, revoked_at: null }, data: { revoked_at: new Date() },
+  });
+  if (!changed.count) return fail(res, 404, 'Active key not found');
+  await audit(res, appId, 'credential.revoke', id);
   res.status(204).end();
 });

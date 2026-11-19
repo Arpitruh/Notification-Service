@@ -43,9 +43,7 @@ try {
     throw new Error('Expected a JSON object mapping app IDs to secrets of at least 32 characters');
   }
   applicationKeys = value as Record<string, string>;
-  if (process.env.NODE_ENV === 'production' && Object.keys(applicationKeys).length === 0) {
-    throw new Error('At least one application API key must be configured in production');
-  }
+  // Database-managed credentials can operate without bootstrap keys.
 } catch (err) {
   console.error('Invalid APP_API_KEYS configuration:', (err as Error).message);
   process.exit(1);
