@@ -31,8 +31,19 @@ notification requests.
   idempotency key unique **within application**, requestedAt, scheduledAt, status.
 - DeliveryAttempt: notificationId, provider, attempt number, status, provider
   message ID, sanitized error code, latency, timestamps.
-- NotificationTemplate: applicationId nullable for global templates, channel,
-  name, version, subject/body, variables schema, enabled/published status.
+- NotificationTemplate: applicationId FK (or explicitly shared global template),
+  channel, slug, name, version, subject/body, variables schema, enabled/published
+  status, createdBy, updatedBy, archivedAt. Unique app+slug+version; scoped reads.
+- ApplicationUser: applicationId FK, externalUserId from the calling application,
+  optional verified email/phone, display name, locale, timezone, status,
+  createdAt, updatedAt. Unique applicationId+externalUserId; users in one app
+  must never be accessible to another. This is a directory of notification
+  recipients, **not** a replacement for the application's authentication system.
+- UserPreference: applicationUserId, channel, category, optedIn/optedOut,
+  preferred language and quiet hours; transactional vs marketing policy.
+- DashboardMembership: Auth Service subject ID, applicationId, role
+  (owner/admin/editor/viewer), status, invitedAt, acceptedAt. Central platform
+  admins are separately scoped; membership changes must be audited.
 - ChannelConfiguration: applicationId, channel, provider type, encrypted secret
   reference, enabled flag, verified sender info.
 - Suppression: applicationId scope or global scope, recipient/channel, reason.
@@ -47,8 +58,17 @@ notification requests.
 - /dashboard/applications — create, edit, disable, assign credentials and quotas.
 - /dashboard/notifications — filter by app/channel/status/date, view timeline,
   inspect sanitized errors, retry eligible failures.
-- /dashboard/templates — versioned editor, preview with sample data, test send,
-  publish and rollback.
+- /dashboard/templates — select application, list its templates; create, clone,
+  edit subject/HTML/plain text, variable schema, live preview, test send, publish,
+  archive/remove, restore, version history and rollback. No filesystem edits or
+  redeploys for normal template changes. A published template version is
+  immutable for in-flight notifications.
+- /dashboard/users — choose application, search/add/import/update/deactivate
+  recipient users, inspect per-user history, manage channel preferences,
+  suppressions and consent. Support users from application API sync as well
+  as manual dashboard entry and CSV upload.
+- /dashboard/team — invite/remove dashboard operators per application and grant
+  owner/admin/editor/viewer roles via Auth Service identities.
 - /dashboard/channels — provider setup and verified sender/channel status.
 - /dashboard/suppressions — opt-outs, bounces, unblock with audit log.
 - /dashboard/webhooks — subscribe, inspect failures, retry deliveries.
@@ -61,6 +81,16 @@ notification requests.
 - POST /api/v1/notifications/batch — bounded-size authenticated batch.
 - GET /api/v1/notifications/:id — **scoped to the authenticated application**.
 - GET /api/v1/templates — only templates visible to that application.
+- GET/POST/PATCH/DELETE /api/v1/admin/applications/:appId/templates — dashboard
+  RBAC only; DELETE archives by default; prevent deleting versions referenced
+  by pending notifications.
+- GET/POST/PATCH /api/v1/admin/applications/:appId/users — dashboard RBAC only,
+  with paginated filters and bulk import; DELETE is audited deactivation or
+  privacy deletion subject to retention requirements.
+- PUT /api/v1/users/:externalUserId — app-key-authenticated upsert of a recipient
+  belonging strictly to that application; no cross-app account lookup.
+- GET/PATCH /api/v1/admin/applications/:appId/members — dashboard admin/owner
+  only, Auth Service session required.
 - POST /api/v1/webhooks/provider/:provider — verified provider signature.
 - Internal /api/v1/admin/* — RBAC-protected human dashboard backend.
 - GET /health — liveness; GET /ready — DB and Redis; GET /metrics — private
@@ -91,9 +121,13 @@ notification requests.
    integrate human dashboard with Auth Service and role checks.
 3. **Dashboard v1:** app management, notification search/details, queues,
    error timeline, audited retries, health and metrics.
-4. **Templates and providers:** database-backed versioned templates, email
-   provider setup, real SMS integration, push integration, preferences.
-5. **Reliability and integrations:** outbox, webhook subscriptions, batch API,
+4. **Templates and users:** database-backed per-application versioned email
+   templates with dashboard-only CRUD, preview/test/publish/archive workflows;
+   application recipient directory, preferences and imports; dashboard team
+   invites and per-app RBAC.
+5. **Providers:** email sender configuration, real SMS integration, push
+   integration and provider event callbacks.
+6. **Reliability and integrations:** outbox, webhook subscriptions, batch API,
    quotas, per-app throttling, monitoring, runbooks and load testing.
 
 ## Acceptance / security checklist
@@ -107,5 +141,12 @@ notification requests.
 - Redis down => /ready 503 and notification enqueues are not claimed successful.
 - SMTP failure and retry exhaustion appear in dashboard with safe diagnostics.
 - Template edits are versioned and cannot silently alter an already queued send.
+- Creating/editing/archiving a template for App A never changes App B templates.
+- An app administrator can add/remove its users, while an operator without
+  appropriate application membership cannot see or change those users.
+- App users are identified by application-scoped external IDs, never globally
+  merged just because emails or phone numbers match.
+- Template and user operations emit audit events; deletion respects privacy
+  requirements and does not break historical delivery records.
 - Every integration has a working sample request, documented status semantics
   and contract/integration tests.
