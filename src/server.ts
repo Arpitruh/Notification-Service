@@ -4,7 +4,8 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { ENV } from './config/env.js';
 import { notificationRoutes } from './api/routes/notification.routes.js';
-import { startNotificationWorker } from './workers/notification.worker.js';
+import { startNotificationWorker, reapExpiredDeliveryClaims } from './workers/notification.worker.js';
+import { startOutboxRelay } from './services/outbox-relay.js';
 import { prisma } from './db/prisma.js';
 import { registry } from './metrics.js';
 import { notificationQueue } from './queues/notification.queue.js';
@@ -17,8 +18,14 @@ const app = express();
 app.set('trust proxy', 1);
 
 app.use(helmet());
-app.use(cors());
-app.use(express.json());
+// Browser access is dashboard same-origin; backend callers use API keys and
+// do not require broad cross-origin access.
+const origins = (process.env.CORS_ALLOWED_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean);
+app.use(cors({ origin: (origin, done) => {
+  if (!origin || origins.includes(origin)) return done(null, true);
+  return done(null, false);
+} }));
+app.use(express.json({ limit: '128kb' }));
 
 app.get('/health', (_req: Request, res: Response) => {
   res.status(200).json({ status: 'UP' });
@@ -39,7 +46,10 @@ app.get('/ready', async (_req: Request, res: Response) => {
   }
 });
 
-app.get('/metrics', async (_req: Request, res: Response) => {
+app.get('/metrics', async (req: Request, res: Response) => {
+  if (!process.env.METRICS_BEARER_TOKEN || req.header('authorization') !== 'Bearer ' + process.env.METRICS_BEARER_TOKEN) {
+    res.status(403).json({ error: 'Forbidden' }); return;
+  }
   res.set('Content-Type', registry.contentType);
   res.end(await registry.metrics());
 });
@@ -60,10 +70,15 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   if (res.headersSent) {
     return;
   }
-  res.status(500).json({ error: 'Internal Server Error', details: err.message });
+  res.status(500).json({ error: 'Internal Server Error' });
 });
 
 const worker = startNotificationWorker();
+const relay = startOutboxRelay();
+const reaper = setInterval(() => {
+  void reapExpiredDeliveryClaims().catch(error => console.error('[reaper] failed', error));
+}, 60_000);
+reaper.unref();
 
 const server = app.listen(ENV.PORT, () => {
   console.log(`🚀 Notification Microservice running on port ${ENV.PORT}`);
@@ -71,11 +86,18 @@ const server = app.listen(ENV.PORT, () => {
 
 const gracefulShutdown = async (signal: string) => {
   console.log(`Received ${signal}. Shutting down gracefully...`);
+  clearInterval(reaper);
   server.close(async () => {
-    await worker.close();
-    await notificationQueue.close();
-    await prisma.$disconnect();
-    process.exit(0);
+    try {
+      await relay.stop();
+      await worker.close();
+      await notificationQueue.close();
+      await prisma.$disconnect();
+      process.exit(0);
+    } catch (error) {
+      console.error('[shutdown] failed', error);
+      process.exitCode = 1;
+    }
   });
 };
 
