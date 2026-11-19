@@ -6,6 +6,17 @@ import { prisma } from '../../db/prisma.js';
 import { requireDashboardIdentity, isPlatformAdmin, type DashboardIdentity } from '../middleware/dashboard-auth.js';
 
 export const dashboardRoutes = Router();
+
+/** Backend-only identity assertion for proxied login attempts.
+ * The target Auth Service verifies the key before honoring original client IP.
+ */
+export function trustedLoginHeaders(clientIp: string, serviceKey: string): Record<string, string> {
+  return {
+    'content-type': 'application/json',
+    'x-auth-service-key': serviceKey,
+    'x-original-client-ip': clientIp,
+  };
+}
 // Same-origin login proxy: Auth Service key stays server-side.
 dashboardRoutes.post('/login', rateLimit({ windowMs: 60_000, limit: 5 }), async (req, res) => {
   const credentials = z.object({ email: z.email(), password: z.string().min(1) }).safeParse(req.body);
@@ -16,11 +27,7 @@ dashboardRoutes.post('/login', rateLimit({ windowMs: 60_000, limit: 5 }), async 
       // The Auth Service validates this backend credential before using the
       // forwarded client IP for its per-IP login limiter. Browser-supplied
       // proxy headers are never forwarded as authentication claims.
-      method: 'POST', headers: {
-        'content-type': 'application/json',
-        'x-auth-service-key': process.env.AUTH_SERVICE_KEY!,
-        'x-original-client-ip': req.ip || '127.0.0.1',
-      },
+      method: 'POST', headers: trustedLoginHeaders(req.ip || '127.0.0.1', process.env.AUTH_SERVICE_KEY!),
       body: JSON.stringify(credentials.data), signal: AbortSignal.timeout(8000),
     });
     if (!response.ok) {
