@@ -23,7 +23,7 @@ describe.skipIf(process.env.RUN_DB_TESTS !== '1')('notification transactional ou
           status(next: number) { status = next; return this; },
           json(body: Record<string, unknown>) { results.push({ status, body }); return this; },
         } as unknown as Response;
-        const req = { body: {
+        const req = { headers: {}, body: {
           recipient: 'concurrent@example.test',
           channel: 'email',
           templateId: 'welcome',
@@ -60,7 +60,7 @@ describe.skipIf(process.env.RUN_DB_TESTS !== '1')('notification transactional ou
         status(next: number) { status = next; return this; },
         json(body: Record<string, unknown>) { data = body; return this; },
       } as unknown as Response;
-      await sendNotification({ body: { recipient, channel: 'email', templateId: 'welcome',
+      await sendNotification({ headers: {}, body: { recipient, channel: 'email', templateId: 'welcome',
         payloadData: {}, idempotencyKey: key } } as Request, res);
       return { status, data };
     }
