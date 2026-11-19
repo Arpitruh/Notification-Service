@@ -1,7 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
-vi.mock('../../src/config/env.js', () => ({ ENV: { SMTP: { host: 'localhost', port: 1025, secure: false, from: 'noreply@example.com', user: '', pass: '' } } }));
-vi.mock('../../src/services/template-renderer.js', () => ({ templateRenderer: {} }));
-const { classifySmtpError } = await import('../../src/providers/email.provider.js');
+import { describe, expect, it } from 'vitest';
+import { classifySmtpError } from '../../src/services/smtp-error.js';
 describe('SMTP transport classification', () => {
   it('retries SMTP 421 and permanently rejects SMTP 550', () => {
     expect(classifySmtpError({ responseCode: 421, code: 'EENVELOPE' }).retryable).toBe(true);
