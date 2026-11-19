@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import crypto from 'node:crypto';
+import { Prisma } from '@prisma/client';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { prisma } from '../../db/prisma.js';
@@ -339,7 +340,7 @@ dashboardRoutes.post('/applications/:appId/notifications/:id/replay', async (req
     const replayed = await prisma.$transaction(async tx => {
       const changed = await tx.notification.updateMany({
         where: { id, status: row.status, caller_service: app.slug },
-        data: { status: 'pending', error_log: undefined },
+        data: { status: 'pending', error_log: Prisma.DbNull },
       });
       if (!changed.count) return false;
       await tx.notificationOutbox.create({ data: { notification_id: id } });
