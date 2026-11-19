@@ -21,6 +21,8 @@ const envSchema = z.object({
   TWILIO_ACCOUNT_SID: z.string().default(''),
   TWILIO_AUTH_TOKEN: z.string().default(''),
   TWILIO_PHONE_NUMBER: z.string().default(''),
+  // JSON map of application IDs to API secrets; configured only in environment.
+  APP_API_KEYS: z.string().default('{}'),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -33,8 +35,26 @@ if (!parsed.success) {
 
 const raw = parsed.data;
 
+let applicationKeys: Record<string, string>;
+try {
+  const value: unknown = JSON.parse(raw.APP_API_KEYS);
+  if (!value || Array.isArray(value) || typeof value !== 'object' ||
+      !Object.entries(value).every(([name, key]) => /^[a-z0-9][a-z0-9-_]{1,63}$/.test(name) && typeof key === 'string' && key.length >= 32)) {
+    throw new Error('Expected a JSON object mapping app IDs to secrets of at least 32 characters');
+  }
+  applicationKeys = value as Record<string, string>;
+  if (process.env.NODE_ENV === 'production' && Object.keys(applicationKeys).length === 0) {
+    throw new Error('At least one application API key must be configured in production');
+  }
+} catch (err) {
+  console.error('Invalid APP_API_KEYS configuration:', (err as Error).message);
+  process.exit(1);
+}
+
+
 export const ENV = {
   PORT: raw.PORT,
+  APP_API_KEYS: applicationKeys,
   DATABASE_URL: raw.DATABASE_URL,
   REDIS_HOST: raw.REDIS_HOST,
   REDIS_PORT: raw.REDIS_PORT,
