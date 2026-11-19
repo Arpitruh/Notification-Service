@@ -19,7 +19,7 @@ export function buildRedisConnection(
   if (!['redis:', 'rediss:'].includes(parsed.protocol) || !parsed.hostname) {
     throw new Error('REDIS_URL must use redis:// or rediss://');
   }
-  const port = parsed.port ? Number(parsed.port) : parsed.protocol === 'rediss:' ? 6380 : 6379;
+  const port = parsed.port ? Number(parsed.port) : 6379;
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid REDIS_URL port');
   const dbText = parsed.pathname.replace(/^\//, '');
   if (dbText && (!/^\d+$/.test(dbText) || Number(dbText) > 15)) throw new Error('Invalid REDIS_URL database');
