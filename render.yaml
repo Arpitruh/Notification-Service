@@ -36,6 +36,14 @@ services:
       # --- Secrets: set these in the Render dashboard (never commit values) ---
       - key: DATABASE_URL
         sync: false
+      - key: APP_API_KEYS
+        sync: false
+      - key: AUTH_SERVICE_URL
+        sync: false
+      - key: AUTH_SERVICE_KEY
+        sync: false
+      - key: DASHBOARD_ADMIN_SUBJECTS
+        sync: false
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT

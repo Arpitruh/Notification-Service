@@ -9,7 +9,7 @@ import type { SendNotificationInput } from '../middleware/validate.middleware.js
 export const sendNotification = async (req: Request, res: Response): Promise<void> => {
   const { recipient, channel, templateId, payloadData, idempotencyKey, priority, scheduledFor } =
     req.body as SendNotificationInput;
-  const callerService = (req.headers['x-caller-service'] as string) || 'default-service';
+  const callerService = res.locals.applicationName as string;
 
   const resolvedIdempotencyKey =
     idempotencyKey ||
@@ -18,8 +18,12 @@ export const sendNotification = async (req: Request, res: Response): Promise<voi
       .update(`${recipient}:${channel}:${templateId}:${JSON.stringify(payloadData)}`)
       .digest('hex');
 
+  // Scope idempotency to the authenticated application, not all tenants.
+  const scopedIdempotencyKey = crypto.createHash('sha256')
+    .update(`${callerService}:${resolvedIdempotencyKey}`).digest('hex');
+
   const existing = await prisma.notification.findUnique({
-    where: { idempotency_key: resolvedIdempotencyKey },
+    where: { idempotency_key: scopedIdempotencyKey },
   });
 
   // A record that is still in-flight or already delivered is a true idempotent hit.
@@ -55,7 +59,7 @@ export const sendNotification = async (req: Request, res: Response): Promise<voi
       })
     : await prisma.notification.create({
         data: {
-          idempotency_key: resolvedIdempotencyKey,
+          idempotency_key: scopedIdempotencyKey,
           recipient,
           channel,
           template_id: templateId,
@@ -70,7 +74,8 @@ export const sendNotification = async (req: Request, res: Response): Promise<voi
   const delay = scheduledDate ? scheduledDate.getTime() - Date.now() : 0;
   await notificationQueue.add(
     'dispatch',
-    { notificationId: auditRecord.id, recipient, channel, templateId, payloadData },
+    { notificationId: auditRecord.id, recipient, channel, templateId, payloadData,
+      renderedEmail: res.locals.renderedEmail },
     { delay: delay > 0 ? delay : 0, priority: normalizedPriority }
   );
 

@@ -49,3 +49,69 @@ model Suppression {
 
   @@unique([recipient, channel])
 }
+model Application {
+  id          String @id @default(uuid())
+  slug        String @unique
+  name        String
+  enabled     Boolean @default(true)
+  created_at  DateTime @default(now())
+  users       ApplicationUser[]
+  templates   MailTemplate[]
+  memberships DashboardMembership[]
+}
+
+model ApplicationUser {
+  id             String @id @default(uuid())
+  application_id String
+  application    Application @relation(fields: [application_id], references: [id], onDelete: Cascade)
+  external_id    String
+  email          String?
+  name           String?
+  enabled        Boolean @default(true)
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  @@unique([application_id, external_id])
+  @@index([application_id])
+}
+
+model MailTemplate {
+  id                 String @id @default(uuid())
+  application_id     String
+  application        Application @relation(fields: [application_id], references: [id], onDelete: Cascade)
+  slug               String
+  subject            String
+  html               String
+  required_variables Json @default("[]")
+  version            Int @default(1)
+  published          Boolean @default(false)
+  archived           Boolean @default(false)
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+
+  @@unique([application_id, slug])
+  @@index([application_id])
+}
+
+model DashboardMembership {
+  id             String @id @default(uuid())
+  application_id String
+  application    Application @relation(fields: [application_id], references: [id], onDelete: Cascade)
+  auth_subject   String
+  role           String @default("viewer")
+  created_at     DateTime @default(now())
+
+  @@unique([application_id, auth_subject])
+  @@index([auth_subject])
+}
+
+model DashboardAudit {
+  id             String @id @default(uuid())
+  application_id String
+  actor          String
+  action         String
+  resource_id    String?
+  created_at     DateTime @default(now())
+
+  @@index([application_id, created_at])
+}

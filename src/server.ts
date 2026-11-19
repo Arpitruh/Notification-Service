@@ -7,6 +7,9 @@ import { notificationRoutes } from './api/routes/notification.routes.js';
 import { startNotificationWorker } from './workers/notification.worker.js';
 import { prisma } from './db/prisma.js';
 import { registry } from './metrics.js';
+import { notificationQueue } from './queues/notification.queue.js';
+import { dashboardRoutes } from './api/routes/dashboard.routes.js';
+import { dashboardHtml } from './dashboard/page.js';
 
 const app = express();
 
@@ -20,10 +23,16 @@ app.get('/health', (_req: Request, res: Response) => {
 
 app.get('/ready', async (_req: Request, res: Response) => {
   try {
-    await prisma.$queryRaw`SELECT 1`;
-    res.status(200).json({ status: 'READY', database: 'connected' });
+    // Both persistent storage and job queue must work for notification delivery.
+    await Promise.all([
+      prisma.$queryRaw`SELECT 1`,
+      notificationQueue.getJobCounts(),
+    ]);
+    res.status(200).json({ status: 'READY', database: 'connected', queue: 'connected' });
   } catch (err) {
-    res.status(503).json({ status: 'NOT_READY', error: (err as Error).message });
+    // Details remain server-side; never leak connection strings or internals.
+    console.error('[readiness] Dependency check failed:', err);
+    res.status(503).json({ status: 'NOT_READY', error: 'Dependency unavailable' });
   }
 });
 
@@ -32,6 +41,13 @@ app.get('/metrics', async (_req: Request, res: Response) => {
   res.end(await registry.metrics());
 });
 
+app.get('/', (_req: Request, res: Response) => res.redirect('/dashboard'));
+app.get('/dashboard', (_req: Request, res: Response) => {
+  res.set('Cache-Control', 'no-store');
+  res.set('Content-Security-Policy', "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-src 'self'; object-src 'none'; base-uri 'none'");
+  res.type('html').send(dashboardHtml);
+});
+app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
 
 // Global error handler. Express 5 forwards rejected async handlers here.
@@ -54,6 +70,7 @@ const gracefulShutdown = async (signal: string) => {
   console.log(`Received ${signal}. Shutting down gracefully...`);
   server.close(async () => {
     await worker.close();
+    await notificationQueue.close();
     await prisma.$disconnect();
     process.exit(0);
   });

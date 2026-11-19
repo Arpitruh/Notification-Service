@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
+import { renderApplicationMail } from '../../services/application-mail.js';
 import {
   templateRenderer,
   TemplateNotFoundError,
@@ -9,7 +10,8 @@ import {
 
 const schema = z.object({
   recipient: z.string().min(1),
-  channel: z.enum(['email', 'sms', 'push']),
+  // SMS is mocked and push is not implemented; don't accept push as deliverable.
+  channel: z.enum(['email', 'sms']),
   templateId: z.string().min(1),
   payloadData: z.record(z.string(), z.any()),
   idempotencyKey: z.string().min(1).optional(),
@@ -35,7 +37,7 @@ export const validateSendNotification = (req: Request, res: Response, next: Next
  * up front with HTTP 400 when the `templateId` is unknown or a required variable
  * is missing, before any job is enqueued.
  */
-export const validateTemplate = (req: Request, res: Response, next: NextFunction): void => {
+export const validateTemplate = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const { channel, templateId, payloadData } = req.body as SendNotificationInput;
 
   // Only email is template-rendered today. Other channels pass through untouched.
