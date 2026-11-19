@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import crypto from 'node:crypto';
+import { Prisma } from '@prisma/client';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { prisma } from '../../db/prisma.js';
@@ -309,4 +310,73 @@ dashboardRoutes.delete('/applications/:appId/credentials/:id', async (req, res) 
   if (!changed.count) return fail(res, 404, 'Active key not found');
   await audit(res, appId, 'credential.revoke', id);
   res.status(204).end();
+});
+
+
+/** Audited manual replay; never silently resend an unknown SMTP outcome. */
+dashboardRoutes.post('/applications/:appId/notifications/:id/replay', async (req, res) => {
+  const appId = String(req.params.appId), id = String(req.params.id);
+  if (!await access(res, appId, 'admin')) return fail(res, 403, 'Forbidden');
+  const parsed = z.object({
+    reason: z.string().trim().min(10).max(500),
+    acceptDuplicateRisk: z.boolean().default(false),
+  }).safeParse(req.body);
+  if (!parsed.success) return fail(res, 400, 'Replay reason is required');
+  const app = await prisma.application.findUnique({ where: { id: appId }, select: { slug: true } });
+  if (!app) return fail(res, 404, 'Application not found');
+  const row = await prisma.notification.findFirst({
+    where: { id, caller_service: app.slug,
+      OR: [{ application_id: appId }, { application_id: null }] },
+    select: { status: true },
+  });
+  if (!row) return fail(res, 404, 'Notification not found');
+  if (!['dead_letter', 'unknown'].includes(row.status)) {
+    return fail(res, 409, 'Only dead-letter or unknown notifications can be replayed');
+  }
+  if (row.status === 'unknown' && !parsed.data.acceptDuplicateRisk) {
+    return fail(res, 409, 'Unknown delivery may have succeeded; acknowledge duplicate risk');
+  }
+  try {
+    const replayed = await prisma.$transaction(async tx => {
+      const changed = await tx.notification.updateMany({
+        where: { id, status: row.status, caller_service: app.slug },
+        data: { status: 'pending', error_log: Prisma.DbNull },
+      });
+      if (!changed.count) return false;
+      await tx.notificationOutbox.create({ data: { notification_id: id } });
+      await tx.dashboardAudit.create({ data: {
+        application_id: appId, actor: actor(res).sub,
+        action: 'notification.replay',
+        resource_id: id,
+      } });
+      return true;
+    });
+    if (!replayed) return fail(res, 409, 'Notification state changed; retry request was not applied');
+    res.status(202).json({ notificationId: id, status: 'queued',
+      message: 'Replay accepted; audit entry recorded' });
+  } catch (error) {
+    console.error('[dashboard] replay operation failed', error);
+    return fail(res, 503, 'Replay unavailable');
+  }
+});
+
+dashboardRoutes.get('/applications/:appId/notifications/:id/attempts', async (req, res) => {
+  const appId = String(req.params.appId), id = String(req.params.id);
+  if (!await access(res, appId, 'admin')) return fail(res, 403, 'Forbidden');
+  const app = await prisma.application.findUnique({ where: { id: appId }, select: { slug: true } });
+  if (!app) return fail(res, 404, 'Application not found');
+  const notification = await prisma.notification.findFirst({
+    where: { id, caller_service: app.slug,
+      OR: [{ application_id: appId }, { application_id: null }] },
+    select: { id: true },
+  });
+  if (!notification) return fail(res, 404, 'Notification not found');
+  const attempts = await prisma.notificationAttempt.findMany({
+    where: { notification_id: id },
+    select: { id: true, attempt_number: true, provider: true, provider_message_id: true,
+      outcome: true, retryable: true, error_code: true, started_at: true, finished_at: true },
+    orderBy: { started_at: 'desc' }, take: 50,
+  });
+  res.set('Cache-Control', 'no-store');
+  res.json({ attempts });
 });

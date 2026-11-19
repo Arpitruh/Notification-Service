@@ -15,8 +15,9 @@ const schema = z.object({
   templateId: z.string().min(1),
   payloadData: z.record(z.string(), z.any()),
   idempotencyKey: z.string().min(1).optional(),
-  priority: z.number().int().optional(),
-  scheduledFor: z.iso.datetime().optional(),
+  priority: z.number().int().min(0).max(2_097_152).optional(),
+  scheduledFor: z.iso.datetime({ offset: true }).optional(),
+  expiresAt: z.iso.datetime({ offset: true }).optional(),
 });
 
 export type SendNotificationInput = z.infer<typeof schema>;

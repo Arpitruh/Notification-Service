@@ -20,6 +20,41 @@ const sendLimiter = rateLimit({
 const router = Router();
 router.post('/send', sendLimiter, authenticateApplication, validateSendNotification, validateTemplate, sendNotification);
 
+
+// Backend-only delivery status; only the authenticated application's records
+// are visible. Never return raw payload_data, rendered email or SMTP errors.
+router.get('/:id', authenticateApplication, async (req, res, next) => {
+  try {
+    const id = String(req.params.id);
+    const n = await prisma.notification.findFirst({
+      where: { id, caller_service: res.locals.applicationName as string },
+      select: { id: true, status: true, channel: true,
+        created_at: true, updated_at: true, attempts: true },
+    });
+    if (!n) { res.status(404).json({ error: 'Notification not found' }); return; }
+    res.set('Cache-Control', 'no-store');
+    res.json({ notification: n });
+  } catch (error) { next(error); }
+});
+
+// Cancellation is an atomic transition. A worker already processing the item
+// cannot be cancelled here; the queued job becomes a harmless no-op.
+router.post('/:id/cancel', authenticateApplication, async (req, res, next) => {
+  try {
+    const id = String(req.params.id);
+    const n = await prisma.notification.updateMany({
+      where: { id, caller_service: res.locals.applicationName as string,
+        status: { in: ['pending', 'queued'] } },
+      data: { status: 'cancelled' },
+    });
+    if (!n.count) {
+      res.status(409).json({ error: 'Notification is not cancellable or does not exist' });
+      return;
+    }
+    res.json({ notificationId: id, status: 'cancelled' });
+  } catch (error) { next(error); }
+});
+
 const registrationEvent = z.object({
   userId: z.string().min(1).max(200),
   email: z.email(),
@@ -42,7 +77,16 @@ router.post('/events/user.registered', sendLimiter, authenticateApplication, asy
       payloadData: { name: name?.trim() || 'there', appName: app.name, dashboardUrl: app.dashboard_url },
       idempotencyKey: 'registration-welcome:' + userId,
     };
-    validateSendNotification(req, res, () => void validateTemplate(req, res, () => void sendNotification(req, res).catch(next)));
+    // Preserve middleware errors; the old callback ignored next(err) and could
+    // enqueue a notification after template validation had failed.
+    res.locals.idempotencyMode = 'event';
+    validateSendNotification(req, res, (error?: unknown) => {
+      if (error) { next(error); return; }
+      void validateTemplate(req, res, (templateError?: unknown) => {
+        if (templateError) { next(templateError); return; }
+        void sendNotification(req, res).catch(next);
+      });
+    });
   } catch (err) { next(err); }
 });
 

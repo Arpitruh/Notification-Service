@@ -2,88 +2,96 @@ import type { Request, Response } from 'express';
 import crypto from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
-import { notificationQueue } from '../../queues/notification.queue.js';
-import { notificationsEnqueued } from '../../metrics.js';
 import type { SendNotificationInput } from '../middleware/validate.middleware.js';
 
-export const sendNotification = async (req: Request, res: Response): Promise<void> => {
-  const { recipient, channel, templateId, payloadData, idempotencyKey, priority, scheduledFor } =
-    req.body as SendNotificationInput;
+const hash = (input: string) => crypto.createHash('sha256').update(input).digest('hex');
+
+/** Canonical JSON prevents spurious conflicts for reordered payload keys. */
+export function canonicalJson(input: unknown): string {
+  if (input === null || typeof input !== 'object') return JSON.stringify(input) ?? 'null';
+  if (Array.isArray(input)) return '[' + input.map(canonicalJson).join(',') + ']';
+  const data = input as Record<string, unknown>;
+  return '{' + Object.keys(data).sort().filter(key => data[key] !== undefined)
+    .map(key => JSON.stringify(key) + ':' + canonicalJson(data[key])).join(',') + '}';
+}
+
+type Outcome =
+  | { kind: 'created'; id: string }
+  | { kind: 'duplicate'; id: string; status: string }
+  | { kind: 'conflict' };
+
+/** Each accepted notification and its outbox event commit together. */
+async function accept(
+  scopedKey: string,
+  bodyHash: string,
+  fields: Prisma.NotificationUncheckedCreateInput,
+): Promise<Outcome> {
+  try {
+    return await prisma.$transaction(async tx => {
+      const n = await tx.notification.create({
+        data: { ...fields, idempotency_key: scopedKey, payload_hash: bodyHash, status: 'pending' },
+        select: { id: true },
+      });
+      await tx.notificationOutbox.create({ data: { notification_id: n.id } });
+      return { kind: 'created', id: n.id } as const;
+    });
+  } catch (error) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') throw error;
+  }
+  // A unique constraint is the synchronization point; no preflight SELECT race.
+  const old = await prisma.notification.findUnique({ where: { idempotency_key: scopedKey } });
+  if (!old) throw new Error('Concurrent idempotency transaction not visible');
+  if (old.payload_hash && old.payload_hash !== bodyHash) return { kind: 'conflict' };
+  // Never automatically replay a dead-letter/failed record on an ordinary API retry.
+  // A dedicated audited replay operation will handle intentional manual replay.
+  return { kind: 'duplicate', id: old.id, status: old.status };
+}
+
+export async function sendNotification(req: Request, res: Response): Promise<void> {
+  const body = req.body as SendNotificationInput & { expiresAt?: string };
   const callerService = res.locals.applicationName as string;
+  const applicationId = (res.locals.applicationId as string | undefined) ?? null;
+  const renderedEmail = res.locals.renderedEmail as { subject: string; html: string } | undefined;
 
-  const resolvedIdempotencyKey =
-    idempotencyKey ||
-    crypto
-      .createHash('sha256')
-      .update(`${recipient}:${channel}:${templateId}:${JSON.stringify(payloadData)}`)
-      .digest('hex');
-
-  // Scope idempotency to the authenticated application, not all tenants.
-  const scopedIdempotencyKey = crypto.createHash('sha256')
-    .update(`${callerService}:${resolvedIdempotencyKey}`).digest('hex');
-
-  const existing = await prisma.notification.findUnique({
-    where: { idempotency_key: scopedIdempotencyKey },
+  const naturalKey = body.idempotencyKey || hash(canonicalJson({
+    recipient: body.recipient, channel: body.channel,
+    templateId: body.templateId, payloadData: body.payloadData,
+  }));
+  // Auth middleware supplies the immutable unique application slug.
+  const scopedKey = hash(callerService + ':' + naturalKey);
+  const bodyHash = res.locals.idempotencyMode === 'event'
+    ? hash('event:' + naturalKey)
+    : hash(canonicalJson({
+        recipient: body.recipient, channel: body.channel,
+        templateId: body.templateId, payloadData: body.payloadData,
+      }));
+  const outcome = await accept(scopedKey, bodyHash, {
+    idempotency_key: scopedKey,
+    recipient: body.recipient,
+    channel: body.channel,
+    template_id: body.templateId,
+    payload_data: body.payloadData as Prisma.InputJsonValue,
+    rendered_email: renderedEmail ? renderedEmail : Prisma.DbNull,
+    priority: body.priority ?? 0,
+    scheduled_for: body.scheduledFor ? new Date(body.scheduledFor) : null,
+    expires_at: body.expiresAt ? new Date(body.expiresAt) : null,
+    caller_service: callerService,
+    application_id: applicationId,
   });
 
-  // A record that is still in-flight or already delivered is a true idempotent hit.
-  if (existing && existing.status !== 'failed' && existing.status !== 'dead_letter') {
-    res.status(200).json({
-      message: 'Idempotent match: Request already handled',
-      notificationId: existing.id,
-      status: existing.status,
-    });
+  if (outcome.kind === 'conflict') {
+    res.status(409).json({ error: 'IDEMPOTENCY_KEY_REUSED',
+      message: 'Key already used for a different delivery payload' });
     return;
   }
-
-  const scheduledDate = scheduledFor ? new Date(scheduledFor) : null;
-  const normalizedPriority = priority ?? 0;
-
-  // Reset an existing failed/dead_letter record instead of inserting a duplicate
-  // (idempotency_key is @unique, so a second create would throw P2002).
-  const auditRecord = existing
-    ? await prisma.notification.update({
-        where: { id: existing.id },
-        data: {
-          recipient,
-          channel,
-          template_id: templateId,
-          payload_data: payloadData,
-          status: 'queued',
-          attempts: 0,
-          priority: normalizedPriority,
-          scheduled_for: scheduledDate,
-          caller_service: callerService,
-          error_log: Prisma.JsonNull,
-        },
-      })
-    : await prisma.notification.create({
-        data: {
-          idempotency_key: scopedIdempotencyKey,
-          recipient,
-          channel,
-          template_id: templateId,
-          payload_data: payloadData,
-          status: 'queued',
-          priority: normalizedPriority,
-          scheduled_for: scheduledDate,
-          caller_service: callerService,
-        },
-      });
-
-  const delay = scheduledDate ? scheduledDate.getTime() - Date.now() : 0;
-  await notificationQueue.add(
-    'dispatch',
-    { notificationId: auditRecord.id, recipient, channel, templateId, payloadData,
-      renderedEmail: res.locals.renderedEmail },
-    { delay: delay > 0 ? delay : 0, priority: normalizedPriority }
-  );
-
-  notificationsEnqueued.inc({ channel });
-
+  if (outcome.kind === 'duplicate') {
+    res.status(200).json({ notificationId: outcome.id, status: outcome.status,
+      message: 'Idempotent match: Request already handled' });
+    return;
+  }
+  // Compatibility: queued means durably accepted, not yet necessarily in Redis.
   res.status(202).json({
-    message: 'Notification enqueued successfully',
-    notificationId: auditRecord.id,
-    status: 'queued',
+    notificationId: outcome.id, status: 'queued',
+    message: 'Notification accepted for delivery',
   });
-};
+}
