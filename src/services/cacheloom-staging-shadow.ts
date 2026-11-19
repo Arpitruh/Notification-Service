@@ -37,7 +37,8 @@ export function mapShadowEvent(event: ShadowOutboxEvent, now = Date.now()) {
   if (!/^[a-zA-Z0-9_-]{1,150}$/.test(event.outboxId) ||
       !/^[a-zA-Z0-9_-]{1,150}$/.test(event.notificationId))
     throw new Error('Invalid staging event identifiers');
-  const when = event.scheduledFor ? new Date(event.scheduledFor).getTime() : now;
+  const when = event.scheduledFor instanceof Date ? event.scheduledFor.getTime()
+    : event.scheduledFor ? new Date(event.scheduledFor).getTime() : now;
   if (!Number.isFinite(when)) throw new Error('Invalid staging schedule');
   const delaySeconds = Math.max(0, Math.ceil((when - now) / 1000));
   if (delaySeconds > 2592000) throw new Error('Staging schedule exceeds 30 days');
