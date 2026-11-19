@@ -74,7 +74,8 @@ export const sendNotification = async (req: Request, res: Response): Promise<voi
   const delay = scheduledDate ? scheduledDate.getTime() - Date.now() : 0;
   await notificationQueue.add(
     'dispatch',
-    { notificationId: auditRecord.id, recipient, channel, templateId, payloadData },
+    { notificationId: auditRecord.id, recipient, channel, templateId, payloadData,
+      renderedEmail: res.locals.renderedEmail },
     { delay: delay > 0 ? delay : 0, priority: normalizedPriority }
   );
 
