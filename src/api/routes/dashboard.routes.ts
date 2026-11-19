@@ -1,9 +1,29 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { prisma } from '../../db/prisma.js';
 import { requireDashboardIdentity, isPlatformAdmin, type DashboardIdentity } from '../middleware/dashboard-auth.js';
 
 export const dashboardRoutes = Router();
+// Same-origin login proxy: Auth Service key stays server-side.
+dashboardRoutes.post('/login', rateLimit({ windowMs: 60_000, limit: 5 }), async (req, res) => {
+  const credentials = z.object({ email: z.email(), password: z.string().min(1) }).safeParse(req.body);
+  if (!credentials.success) { res.status(400).json({ error: 'Invalid credentials format' }); return; }
+  if (!process.env.AUTH_SERVICE_URL) { res.status(503).json({ error: 'Dashboard login not configured' }); return; }
+  try {
+    const response = await fetch(`${process.env.AUTH_SERVICE_URL.replace(/\/$/, '')}/api/v1/auth/login`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(credentials.data), signal: AbortSignal.timeout(8000),
+    });
+    if (!response.ok) { res.status(401).json({ error: 'Invalid credentials' }); return; }
+    const data: unknown = await response.json();
+    if (!data || typeof data !== 'object' || !('accessToken' in data) || typeof data.accessToken !== 'string') {
+      res.status(502).json({ error: 'Invalid authentication response' }); return;
+    }
+    res.set('Cache-Control', 'no-store');
+    res.json({ accessToken: data.accessToken });
+  } catch { res.status(503).json({ error: 'Authentication unavailable' }); }
+});
 dashboardRoutes.use(requireDashboardIdentity);
 
 const appSchema = z.object({ slug: z.string().regex(/^[a-z0-9][a-z0-9-]{1,62}$/), name: z.string().trim().min(2).max(120) });
