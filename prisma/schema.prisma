@@ -18,6 +18,20 @@ enum NotificationStatus {
   sent
   failed
   dead_letter
+  pending
+  retry_scheduled
+  expired
+  cancelled
+  suppressed
+  unknown
+}
+
+enum AttemptOutcome {
+  started
+  accepted
+  transient_failure
+  permanent_failure
+  unknown
 }
 
 model Notification {
@@ -33,11 +47,54 @@ model Notification {
   scheduled_for   DateTime?
   caller_service  String
   error_log       Json?
+  application_id  String?
+  payload_hash    String?
+  rendered_email  Json?
+  provider_message_id String?
+  expires_at      DateTime?
+  locked_by       String?
+  locked_until    DateTime?
+  delivery_attempts NotificationAttempt[]
+  outbox_events    NotificationOutbox[]
   created_at      DateTime           @default(now())
   updated_at      DateTime           @updatedAt
 
   @@index([idempotency_key])
   @@index([status])
+  @@index([status, scheduled_for])
+  @@index([application_id, created_at])
+}
+
+model NotificationOutbox {
+  id              String @id @default(uuid())
+  notification_id String
+  notification    Notification @relation(fields: [notification_id], references: [id], onDelete: Cascade)
+  next_attempt_at DateTime @default(now())
+  claimed_until   DateTime?
+  attempts        Int @default(0)
+  last_error      String?
+  published_at    DateTime?
+  created_at      DateTime @default(now())
+  @@index([published_at, next_attempt_at])
+  @@index([notification_id])
+  @@map("notification_outbox")
+}
+
+model NotificationAttempt {
+  id                  String @id @default(uuid())
+  notification_id     String
+  notification        Notification @relation(fields: [notification_id], references: [id], onDelete: Cascade)
+  attempt_number      Int
+  provider            String
+  provider_message_id String?
+  outcome             AttemptOutcome @default(started)
+  retryable           Boolean?
+  error_code          String?
+  error_message       String?
+  started_at          DateTime @default(now())
+  finished_at         DateTime?
+  @@index([notification_id, started_at])
+  @@map("notification_attempt")
 }
 
 model Suppression {
