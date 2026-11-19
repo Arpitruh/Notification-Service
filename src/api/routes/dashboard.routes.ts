@@ -347,6 +347,7 @@ dashboardRoutes.post('/applications/:appId/notifications/:id/replay', async (req
       await tx.dashboardAudit.create({ data: {
         application_id: appId, actor: actor(res).sub,
         action: 'notification.replay',
+        reason: parsed.data.reason,
         resource_id: id,
       } });
       return true;
