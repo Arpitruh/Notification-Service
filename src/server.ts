@@ -8,6 +8,8 @@ import { startNotificationWorker } from './workers/notification.worker.js';
 import { prisma } from './db/prisma.js';
 import { registry } from './metrics.js';
 import { notificationQueue } from './queues/notification.queue.js';
+import { dashboardRoutes } from './api/routes/dashboard.routes.js';
+import { dashboardHtml } from './dashboard/page.js';
 
 const app = express();
 
@@ -42,6 +44,13 @@ app.get('/metrics', async (_req: Request, res: Response) => {
   res.end(await registry.metrics());
 });
 
+app.get('/', (_req: Request, res: Response) => res.redirect('/dashboard'));
+app.get('/dashboard', (_req: Request, res: Response) => {
+  res.set('Cache-Control', 'no-store');
+  res.set('Content-Security-Policy', "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-src 'self'; object-src 'none'; base-uri 'none'");
+  res.type('html').send(dashboardHtml);
+});
+app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
 
 // Global error handler. Express 5 forwards rejected async handlers here.
