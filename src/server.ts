@@ -12,6 +12,9 @@ import { dashboardRoutes } from './api/routes/dashboard.routes.js';
 import { dashboardHtml } from './dashboard/page.js';
 
 const app = express();
+// Render terminates TLS in front of this service. Trust one proxy hop so
+// express-rate-limit uses the forwarded client IP instead of a shared proxy IP.
+app.set('trust proxy', 1);
 
 app.use(helmet());
 app.use(cors());
