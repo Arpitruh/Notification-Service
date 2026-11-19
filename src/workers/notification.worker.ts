@@ -26,7 +26,7 @@ export function startNotificationWorker(): Worker<NotificationJobData> {
   const worker = new Worker<NotificationJobData>(
     'notifications-standard',
     async (job: Job<NotificationJobData>) => {
-      const { notificationId, recipient, channel, templateId, payloadData } = job.data;
+      const { notificationId, recipient, channel, templateId, payloadData, renderedEmail } = job.data;
 
       // attemptsMade is 0 on the first run; present it as a 1-based attempt count.
       await prisma.notification.update({
@@ -52,7 +52,9 @@ export function startNotificationWorker(): Worker<NotificationJobData> {
       let result: DeliveryResult;
       if (channel === 'email') {
         try {
-          result = await emailProvider.send({ recipient, templateId, payloadData });
+          result = renderedEmail
+            ? await emailProvider.sendRendered(recipient, renderedEmail)
+            : await emailProvider.send({ recipient, templateId, payloadData });
         } catch (err) {
           stopTimer();
           // A template problem will never succeed on retry; fail permanently.
