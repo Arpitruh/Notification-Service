@@ -171,6 +171,7 @@ model DashboardAudit {
   application_id String
   actor          String
   action         String
+  reason         String?
   resource_id    String?
   created_at     DateTime @default(now())
 
