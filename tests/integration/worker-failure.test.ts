@@ -79,6 +79,27 @@ describe.skipIf(process.env.RUN_DB_TESTS !== '1')('worker failure injection (sta
       await prisma.notification.deleteMany({ where: { id } });
     }
   });
+
+  it('marks stale pre-migration processing rows without worker lease as unknown', async () => {
+    const { prisma } = await import('../../src/db/prisma.ts');
+    const { reapExpiredDeliveryClaims } = await import('../../src/workers/notification.worker.ts');
+    const id = crypto.randomUUID();
+    try {
+      await prisma.notification.create({ data: {
+        id, idempotency_key: crypto.randomUUID(), recipient: 'legacy@example.test',
+        channel: 'email', template_id: 'welcome', payload_data: {},
+        status: 'processing', caller_service: 'ci-test', locked_by: null,
+        locked_until: null, updated_at: new Date(Date.now() - 12 * 60_000),
+      } });
+      await reapExpiredDeliveryClaims();
+      const n = await prisma.notification.findUniqueOrThrow({ where: { id } });
+      expect(n.status).toBe('unknown');
+      expect(n.locked_by).toBeNull();
+    } finally {
+      await prisma.notification.deleteMany({ where: { id } });
+    }
+  });
+
   it('does not resend if SMTP accepted but the database cannot persist success', async () => {
     const { prisma } = await import('../../src/db/prisma.ts');
     const { notificationQueue } = await import('../../src/queues/notification.queue.ts');
