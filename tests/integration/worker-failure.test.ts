@@ -80,4 +80,57 @@ describe.skipIf(process.env.RUN_DB_TESTS !== '1')('worker failure injection (sta
       await prisma.notification.deleteMany({ where: { id } });
     }
   });
+  it('does not resend if SMTP accepted but the database cannot persist success', async () => {
+    const { prisma } = await import('../../src/db/prisma.ts');
+    const { notificationQueue } = await import('../../src/queues/notification.queue.ts');
+    const { EmailProvider } = await import('../../src/providers/email.provider.ts');
+    const { startNotificationWorker, reapExpiredDeliveryClaims } = await import('../../src/workers/notification.worker.ts');
+    const id = crypto.randomUUID();
+    const jobId = 'db-after-smtp-' + id;
+    const txSpy = vi.spyOn(prisma, '$transaction');
+    const send = vi.spyOn(EmailProvider.prototype, 'sendRendered').mockImplementation(async () => {
+      // Inject failure precisely AFTER SMTP reported acceptance.
+      txSpy.mockRejectedValueOnce(new Error('synthetic Postgres outage after SMTP acceptance'));
+      return { success: true, providerMessageId: '<accepted-but-uncommitted@example.test>' };
+    });
+    let worker: ReturnType<typeof startNotificationWorker> | undefined;
+    try {
+      await prisma.notification.create({ data: {
+        id, idempotency_key: crypto.randomUUID(), recipient: 'test@example.test',
+        channel: 'email', template_id: 'welcome',
+        payload_data: {}, status: 'queued', caller_service: 'ci-test',
+        rendered_email: { subject: 'Test', html: '<p>Hello</p>' },
+      } });
+      worker = startNotificationWorker();
+      await notificationQueue.add('dispatch', { notificationId: id }, { jobId });
+      let failed = false;
+      for (let i = 0; i < 80; i++) {
+        const job = await notificationQueue.getJob(jobId);
+        if (job && await job.getState() === 'failed') { failed = true; break; }
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      expect(failed).toBe(true);
+      expect(send).toHaveBeenCalledTimes(1);
+      expect((await prisma.notification.findUniqueOrThrow({ where: { id } })).status).toBe('processing');
+      txSpy.mockRestore();
+      await prisma.notification.update({ where: { id },
+        data: { locked_until: new Date(Date.now() - 1000) } });
+      await reapExpiredDeliveryClaims();
+      expect((await prisma.notification.findUniqueOrThrow({ where: { id } })).status).toBe('unknown');
+      expect((await prisma.notificationAttempt.findFirstOrThrow({
+        where: { notification_id: id },
+      })).outcome).toBe('unknown');
+      // Existing failed BullMQ job does not cause automatic SMTP resend.
+      expect(send).toHaveBeenCalledTimes(1);
+    } finally {
+      txSpy.mockRestore();
+      if (worker) await worker.close();
+      const job = await notificationQueue.getJob(jobId);
+      if (job) await job.remove().catch(() => undefined);
+      await prisma.notification.deleteMany({ where: { id } });
+      send.mockRestore();
+      await notificationQueue.close();
+    }
+  }, 15_000);
+
 });
