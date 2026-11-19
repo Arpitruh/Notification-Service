@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
+import { renderApplicationMail } from '../../services/application-mail.js';
 import {
   templateRenderer,
   TemplateNotFoundError,
@@ -36,7 +37,7 @@ export const validateSendNotification = (req: Request, res: Response, next: Next
  * up front with HTTP 400 when the `templateId` is unknown or a required variable
  * is missing, before any job is enqueued.
  */
-export const validateTemplate = (req: Request, res: Response, next: NextFunction): void => {
+export const validateTemplate = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const { channel, templateId, payloadData } = req.body as SendNotificationInput;
 
   // Only email is template-rendered today. Other channels pass through untouched.
