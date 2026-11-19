@@ -1,6 +1,7 @@
 import { Worker, UnrecoverableError } from 'bullmq';
 import type { Job } from 'bullmq';
-import { ENV } from '../config/env.js';
+import { redisConnection } from '../config/redis.js';
+import { allowUnknownResend, classifyDelivery, safeDeliveryError } from '../services/delivery-policy.js';
 import { prisma } from '../db/prisma.js';
 import { EmailProvider } from '../providers/email.provider.js';
 import { SmsProvider } from '../providers/sms.provider.js';
@@ -54,8 +55,8 @@ export function startNotificationWorker(): Worker<NotificationJobData> {
       if (channel === 'email') {
         try {
           result = renderedEmail
-            ? await emailProvider.sendRendered(recipient, renderedEmail)
-            : await emailProvider.send({ recipient, templateId, payloadData });
+            ? await emailProvider.sendRendered(recipient, renderedEmail, { idempotencyId: notificationId })
+            : await emailProvider.send({ recipient, templateId, payloadData }, { idempotencyId: notificationId });
         } catch (err) {
           stopTimer();
           // A template problem will never succeed on retry; fail permanently.
@@ -84,7 +85,7 @@ export function startNotificationWorker(): Worker<NotificationJobData> {
       notificationsProcessed.inc({ channel, outcome: 'sent' });
     },
     {
-      connection: { host: ENV.REDIS_HOST, port: ENV.REDIS_PORT },
+      connection: redisConnection,
       concurrency: 5,
     }
   );
@@ -103,7 +104,7 @@ export function startNotificationWorker(): Worker<NotificationJobData> {
         where: { id: notificationId },
         data: {
           status: 'dead_letter',
-          error_log: { message: err.message, stack: err.stack },
+          error_log: { code: err.name, message: safeDeliveryError(err.message) },
         },
       });
       notificationsProcessed.inc({ channel, outcome: 'dead_letter' });
@@ -111,7 +112,7 @@ export function startNotificationWorker(): Worker<NotificationJobData> {
       // Transient failure; a retry is still pending.
       await prisma.notification.update({
         where: { id: job.data.notificationId },
-        data: { status: 'failed', error_log: { message: err.message } },
+        data: { status: 'failed', error_log: { code: err.name, message: safeDeliveryError(err.message) } },
       });
     }
   });
