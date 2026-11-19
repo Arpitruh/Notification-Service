@@ -9,7 +9,8 @@ import {
 
 const schema = z.object({
   recipient: z.string().min(1),
-  channel: z.enum(['email', 'sms', 'push']),
+  // SMS is mocked and push is not implemented; don't accept push as deliverable.
+  channel: z.enum(['email', 'sms']),
   templateId: z.string().min(1),
   payloadData: z.record(z.string(), z.any()),
   idempotencyKey: z.string().min(1).optional(),
