@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { describe, expect, it, vi } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 
 /**
  * Runs only in ephemeral PostgreSQL + Redis GitHub CI. Never use production.
@@ -50,7 +50,6 @@ describe.skipIf(process.env.RUN_DB_TESTS !== '1')('worker failure injection (sta
         (await notificationQueue.getJob(jobId))?.remove().catch(() => undefined)));
       await prisma.notification.deleteMany({ where: { id } });
       send.mockRestore();
-      await notificationQueue.close();
     }
   });
 
@@ -129,8 +128,14 @@ describe.skipIf(process.env.RUN_DB_TESTS !== '1')('worker failure injection (sta
       if (job) await job.remove().catch(() => undefined);
       await prisma.notification.deleteMany({ where: { id } });
       send.mockRestore();
-      await notificationQueue.close();
     }
   }, 15_000);
 
+});
+
+afterAll(async () => {
+  if (process.env.RUN_DB_TESTS === '1') {
+    const { notificationQueue } = await import('../../src/queues/notification.queue.ts');
+    await notificationQueue.close();
+  }
 });
