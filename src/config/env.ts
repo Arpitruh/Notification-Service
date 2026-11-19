@@ -39,7 +39,7 @@ let applicationKeys: Record<string, string>;
 try {
   const value: unknown = JSON.parse(raw.APP_API_KEYS);
   if (!value || Array.isArray(value) || typeof value !== 'object' ||
-      !Object.entries(value).every(([name, key]) => /^[a-z0-9][a-z0-9-_]{1,63}$/.test(name) && typeof key === 'string' && key.length >= 32)) {
+      !Object.entries(value).every(([name, key]) => /^[a-z0-9][a-z0-9_-]{1,63}$/.test(name) && typeof key === 'string' && key.length >= 32)) {
     throw new Error('Expected a JSON object mapping app IDs to secrets of at least 32 characters');
   }
   applicationKeys = value as Record<string, string>;
