@@ -20,6 +20,7 @@ interface NotificationJobData {
   channel: 'email' | 'sms' | 'push';
   templateId: string;
   payloadData: Record<string, unknown>;
+  renderedEmail?: { subject: string; html: string };
 }
 
 export function startNotificationWorker(): Worker<NotificationJobData> {
