@@ -53,7 +53,7 @@ async function access(res: import('express').Response, appId: string, min: Role 
   return !!member && (rank[member.role as Role] ?? -1) >= rank[min];
 }
 async function audit(res: import('express').Response, appId: string, action: string, resourceId?: string) {
-  await prisma.dashboardAudit.create({ data: { application_id: appId, actor: actor(res).sub, action, resource_id: resourceId } });
+  await prisma.dashboardAudit.create({ data: { application_id: appId, actor: actor(res).sub, action, resource_id: resourceId ?? null } });
 }
 function parse<T>(res: import('express').Response, schema: z.ZodSchema<T>, value: unknown): T | undefined {
   const parsed = schema.safeParse(value);
@@ -109,7 +109,11 @@ dashboardRoutes.patch('/applications/:appId/templates/:id', async (req, res) => 
   const item = await prisma.mailTemplate.findFirst({ where: { id, application_id: appId } });
   if (!item) return fail(res, 404, 'Template not found');
   const updated = await prisma.mailTemplate.update({ where: { id }, data: {
-    ...body, required_variables: body.requiredVariables,
+    ...(body.subject !== undefined ? { subject: body.subject } : {}),
+    ...(body.html !== undefined ? { html: body.html } : {}),
+    ...(body.published !== undefined ? { published: body.published } : {}),
+    ...(body.archived !== undefined ? { archived: body.archived } : {}),
+    ...(body.requiredVariables !== undefined ? { required_variables: body.requiredVariables } : {}),
     version: { increment: 1 },
   } });
   await audit(res, appId, 'template.update', id);
@@ -135,8 +139,12 @@ dashboardRoutes.post('/applications/:appId/users', async (req, res) => {
   const body = parse(res, userSchema, req.body); if (!body) return;
   const user = await prisma.applicationUser.upsert({
     where: { application_id_external_id: { application_id: appId, external_id: body.externalId } },
-    create: { application_id: appId, external_id: body.externalId, email: body.email, name: body.name, enabled: body.enabled ?? true },
-    update: { email: body.email, name: body.name, enabled: body.enabled },
+    create: { application_id: appId, external_id: body.externalId, email: body.email ?? null, name: body.name ?? null, enabled: body.enabled ?? true },
+    update: {
+      ...(body.email !== undefined ? { email: body.email } : {}),
+      ...(body.name !== undefined ? { name: body.name } : {}),
+      ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
+    },
   });
   await audit(res, appId, 'user.upsert', user.id);
   res.json({ user });
