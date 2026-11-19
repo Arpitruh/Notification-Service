@@ -2,26 +2,37 @@ export const dashboardHtml = /* html */ `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Notification Garden • Dashboard</title>
+<meta name="theme-color" content="#455230">
+<meta name="description" content="Notification Service — manage applications, email templates, registration events and delivery integrations from one dashboard.">
+<title>Notification Service • Dashboard</title>
 <style>
 :root{--bg:#f4f4eb;--paper:#fffef9;--green:#455230;--olive:#637545;--edge:#d9dfcd;--muted:#6f7468}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:#28301e;font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
-h1{font-size:28px;margin:0 0 7px}h2{font-size:17px;margin:0}p{color:var(--muted);margin:7px 0 20px}
+h1{font-size:clamp(24px,3vw,32px);letter-spacing:-.035em;margin:0 0 7px}h2{font-size:17px;margin:0}p{color:var(--muted);margin:7px 0 20px}
 button,input,textarea,select{font:inherit}button{border:0;background:var(--green);color:white;border-radius:9px;padding:10px 15px;cursor:pointer;font-weight:600}
-button:hover{background:var(--olive)}button.secondary{background:#e5eadb;color:var(--green)}button.danger{background:#9f443e}
+button:hover{background:var(--olive)}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #8ca466;outline-offset:2px}button:disabled{opacity:.55;cursor:not-allowed}button.secondary{background:#e5eadb;color:var(--green)}button.danger{background:#9f443e}
 input,textarea,select{width:100%;background:white;border:1px solid #cbd4bd;padding:10px 12px;border-radius:9px;color:#28301e}
 textarea{min-height:140px;font-family:ui-monospace,monospace}
 label{font-size:12px;color:var(--muted);font-weight:600;display:block;margin-bottom:5px}
 .field{margin-bottom:14px}
 #login{max-width:420px;margin:13vh auto;padding:30px;background:var(--paper);border:1px solid var(--edge);border-radius:18px;box-shadow:0 12px 50px #28301e12}
 .layout{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
-aside{background:#e8ecd9;padding:27px 20px;border-right:1px solid #d3dac6}
-.brand{font-weight:800;color:var(--green);font-size:21px;margin:0 0 30px}
-.nav{display:block;width:100%;background:transparent;color:var(--green);text-align:left;margin:4px 0;padding:12px}
+aside{background:#e8ecd9;padding:27px 20px;border-right:1px solid #d3dac6;display:flex;flex-direction:column;gap:3px;position:sticky;top:0;height:100vh;overflow-y:auto}
+.brand{font-weight:800;color:var(--green);font-size:20px;letter-spacing:-.04em;margin:0 0 20px;display:flex;align-items:center;gap:10px}
+.brandmark{display:inline-grid;place-items:center;background:var(--green);color:#fff;border-radius:12px;width:39px;height:39px;font-size:21px;flex-shrink:0}
+.side-label{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:#737f63;font-weight:800;margin:16px 12px 7px}
+.sidebar-bottom{margin-top:auto;padding:16px 12px 0;border-top:1px solid #cbd4bd}
+.sidebar-bottom p{font-size:12px;margin:5px 0 11px}
+.sidebar-bottom a{color:var(--green);font-weight:650;text-decoration:none}
+.sidebar-bottom a:hover{text-decoration:underline}
+.nav{display:block;width:100%;background:transparent;color:var(--green);text-align:left;margin:2px 0;padding:11px 13px;transition:background .15s,transform .15s}
+.nav:hover{background:#d9e1cc;transform:translateX(2px)}
+.nav.active:hover{background:var(--olive)}
 .nav.active{background:var(--green);color:white}
-main{padding:32px 40px;max-width:1350px;width:100%}
+main{padding:32px clamp(18px,3.5vw,52px) 0;max-width:1450px;width:100%;min-width:0;display:flex;flex-direction:column;min-height:100vh}
 .top{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:26px}
-.panel{background:var(--paper);border:1px solid var(--edge);border-radius:14px;padding:22px;margin:18px 0}
+.panel{background:var(--paper);border:1px solid var(--edge);border-radius:16px;padding:clamp(16px,2.4vw,26px);margin:10px 0 28px;box-shadow:0 8px 32px #28301e08}
+#body{flex:1;min-width:0;overflow-x:auto}
 .head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px}
 .actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .stack{display:grid;gap:12px}
@@ -35,34 +46,97 @@ small,.hint{color:var(--muted)}
 #notice{position:fixed;bottom:18px;right:18px;max-width:460px;background:#28301e;color:#fff;padding:12px 18px;border-radius:10px;display:none;box-shadow:0 8px 32px #0003}
 .empty{text-align:center;color:var(--muted);padding:50px 0}
 .hidden{display:none!important}
-@media(max-width:800px){.layout{display:block}aside{padding:14px;border:0}.nav{display:inline-block;width:auto}main{padding:18px}.grid{grid-template-columns:1fr}.top{flex-wrap:wrap}}
+.top p{margin:5px 0;color:var(--muted)}
+.page-eyebrow{color:var(--olive);font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;margin-bottom:7px}
+.footer{border-top:1px solid var(--edge);padding:24px 0 20px;color:var(--muted);font-size:12px;margin-top:auto}
+.footer-main{display:grid;grid-template-columns:minmax(200px,1.7fr) repeat(2,minmax(120px,1fr));gap:22px;margin-bottom:20px}
+.footer strong{display:block;color:#39482a;font-size:13px;margin-bottom:10px}
+.footer p{margin:4px 0;max-width:410px;font-size:12px;line-height:1.7}
+.footer a{color:#455230;text-decoration:none;display:inline-block;margin:4px 0}
+.footer a:hover{text-decoration:underline}
+.footer nav{display:grid;gap:3px}
+.footer-line{border-top:1px solid var(--edge);padding-top:16px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.login-shell{min-height:100vh;display:flex;flex-direction:column;padding:20px}
+#login{width:100%;margin:auto;max-width:440px}
+#login .brand{margin-bottom:24px}
+#login button[type=submit]{width:100%;margin-top:5px}
+.login-shell>.footer{max-width:1150px;width:100%;margin:36px auto 0}
+.service-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#93a47b;margin-right:5px}
+.service-meta{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+table{min-width:590px}
+
+@media(max-width:800px){.layout{display:block}aside{padding:14px;border:0;position:static;height:auto;display:block}.brand{margin-bottom:12px}.side-label{display:none}.nav{display:inline-block;width:auto;font-size:12px;margin:2px;padding:10px}.nav:hover{transform:none}.sidebar-bottom{display:flex;align-items:center;gap:16px;margin-top:10px;padding:8px 0 0}.sidebar-bottom p{display:none}.sidebar-bottom button{margin-top:0!important}main{padding:18px;min-height:70vh}.grid{grid-template-columns:1fr}.top{flex-wrap:wrap}.footer-main{grid-template-columns:1fr 1fr}.footer-main>div:first-child{grid-column:1/-1}}
+@media(max-width:480px){.footer-main{grid-template-columns:1fr}.footer-main>div:first-child{grid-column:auto}#login{padding:22px}.top select{max-width:100%}}
 </style>
 </head><body>
+<div id="loginShell" class="login-shell">
 <section id="login">
-<div class="brand">✉ Notification Garden</div>
-<h1>Dashboard Login</h1><p>Use your Auth Service account to manage applications, templates, and users.</p>
+<div class="brand"><span class="brandmark" aria-hidden="true">✉</span><span>Notification Service</span></div>
+<h1>Welcome back</h1><p>Use your Auth Service account to manage applications, templates, and users.</p>
 <form id="loginForm"><div class="field"><label>Email</label><input id="loginEmail" type="email" autocomplete="username" required></div>
 <div class="field"><label>Password</label><input id="loginPassword" type="password" autocomplete="current-password" required></div>
 <button type="submit">Sign in</button></form>
 <p id="loginError" role="alert"></p>
 </section>
+<footer class="footer" aria-label="Website information">
+  <div class="footer-main">
+    <div><strong>✉ Notification Service</strong>
+      <p>Centralized notifications for your applications. Manage email templates, registration events, recipients and API access in one place.</p>
+      <p class="service-meta"><span class="service-dot" aria-hidden="true"></span> Dashboard &amp; notification API</p>
+    </div>
+    <div><strong>Platform</strong><nav aria-label="Platform links">
+      <a href="/dashboard">Dashboard</a>
+      <a href="/health" target="_blank" rel="noopener noreferrer">Service health</a>
+      <a href="/ready" target="_blank" rel="noopener noreferrer">Dependency readiness</a>
+    </nav></div>
+    <div><strong>Resources &amp; support</strong><nav aria-label="Resource links">
+      <a href="https://github.com/Arpitruh/Notification-Service" target="_blank" rel="noopener noreferrer">Source repository</a>
+      <a href="https://github.com/Arpitruh/Notification-Service/blob/master/docs/DASHBOARD_EVENT_CONFIGURATION.md" target="_blank" rel="noopener noreferrer">Integration guide</a>
+      <a href="https://github.com/Arpitruh/Notification-Service/issues" target="_blank" rel="noopener noreferrer">Report an issue</a>
+    </nav></div>
+  </div>
+  <div class="footer-line"><span>© <span class="copyright-year">2026</span> Notification Service. All rights reserved.</span><span>Application notification management · v1.0</span></div>
+</footer>
+</div>
 <div id="workspace" class="layout hidden">
-<aside><div class="brand">✉ Notification Garden</div>
+<aside><div class="brand"><span class="brandmark" aria-hidden="true">✉</span><span>Notification Service</span></div>
+<div class="side-label">Workspace</div>
+<button class="nav" data-section="applications">▦ Applications</button>
 <button class="nav active" data-section="templates">✉ Mail Templates</button>
 <button class="nav" data-section="users">♙ Application Users</button>
 <button class="nav" data-section="team">♧ Team Access</button>
 <button class="nav" data-section="audit">☷ Audit History</button>
-<button class="nav" data-section="applications">▦ Applications</button>
+<div class="side-label">Administration</div>
 <button class="nav" data-section="settings">⚙ App Settings</button>
 <button class="nav" data-section="credentials">⚿ API Keys</button>
-<button id="logout" class="secondary" style="margin-top:24px">Log out</button></aside>
-<main><div class="top"><div><h1 id="pageTitle">Mail Templates</h1><p>Everything organized by application.</p></div>
+<div class="sidebar-bottom"><p>Connected application management</p><button id="logout" class="secondary">↪ Log out</button></div></aside>
+<main><div class="top"><div><div class="page-eyebrow">Application management</div><h1 id="pageTitle">Mail Templates</h1><p>Everything organized by application.</p></div>
 <div style="min-width:220px"><label>Selected application</label><select id="appSelect"></select></div></div>
 <section id="body" class="panel"><div class="empty">Loading…</div></section>
+<footer class="footer" aria-label="Website information">
+  <div class="footer-main">
+    <div><strong>✉ Notification Service</strong>
+      <p>Centralized notifications for your applications. Manage email templates, registration events, recipients and API access in one place.</p>
+      <p class="service-meta"><span class="service-dot" aria-hidden="true"></span> Dashboard &amp; notification API</p>
+    </div>
+    <div><strong>Platform</strong><nav aria-label="Platform links">
+      <a href="/dashboard">Dashboard</a>
+      <a href="/health" target="_blank" rel="noopener noreferrer">Service health</a>
+      <a href="/ready" target="_blank" rel="noopener noreferrer">Dependency readiness</a>
+    </nav></div>
+    <div><strong>Resources &amp; support</strong><nav aria-label="Resource links">
+      <a href="https://github.com/Arpitruh/Notification-Service" target="_blank" rel="noopener noreferrer">Source repository</a>
+      <a href="https://github.com/Arpitruh/Notification-Service/blob/master/docs/DASHBOARD_EVENT_CONFIGURATION.md" target="_blank" rel="noopener noreferrer">Integration guide</a>
+      <a href="https://github.com/Arpitruh/Notification-Service/issues" target="_blank" rel="noopener noreferrer">Report an issue</a>
+    </nav></div>
+  </div>
+  <div class="footer-line"><span>© <span class="copyright-year">2026</span> Notification Service. All rights reserved.</span><span>Application notification management · v1.0</span></div>
+</footer>
 </main></div><div id="notice" role="status"></div>
 <script>
 (() => {
 const $ = id => document.getElementById(id);
+document.querySelectorAll('.copyright-year').forEach(node=>node.textContent=String(new Date().getFullYear()));
 const state={token:'',apps:[],appId:'',section:'templates'};
 function show(message){$('notice').textContent=message;$('notice').style.display='block';setTimeout(()=>$('notice').style.display='none',4500)}
 function el(tag,text,attrs={}){const node=document.createElement(tag);if(text!==undefined)node.textContent=String(text);for(const [k,v] of Object.entries(attrs))node.setAttribute(k,v);return node}
@@ -128,8 +202,8 @@ function createCredential(){
 }
 
 async function audit(){const {events}=await api('/applications/'+state.appId+'/audit');const p=panel();p.append(header('Recent changes'));p.append(table(['When','Operator','Action','Resource'],events.map(e=>[new Date(e.created_at).toLocaleString(),e.actor,e.action,e.resource_id||'—'])))}
-$('loginForm').addEventListener('submit',async e=>{e.preventDefault();$('loginError').textContent='';try{const response=await fetch('/api/v1/dashboard/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:$('loginEmail').value,password:$('loginPassword').value})});const data=await response.json();if(!response.ok)throw Error(data.error||'Login failed');state.token=data.accessToken;$('loginPassword').value='';await reloadApps();$('login').classList.add('hidden');$('workspace').classList.remove('hidden');render()}catch(err){$('loginError').textContent=err.message}});
-$('logout').addEventListener('click',()=>{state.token='';$('workspace').classList.add('hidden');$('login').classList.remove('hidden')});
+$('loginForm').addEventListener('submit',async e=>{e.preventDefault();$('loginError').textContent='';try{const response=await fetch('/api/v1/dashboard/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:$('loginEmail').value,password:$('loginPassword').value})});const data=await response.json();if(!response.ok)throw Error(data.error||'Login failed');state.token=data.accessToken;$('loginPassword').value='';await reloadApps();$('loginShell').classList.add('hidden');$('workspace').classList.remove('hidden');render()}catch(err){$('loginError').textContent=err.message}});
+$('logout').addEventListener('click',()=>{state.token='';$('workspace').classList.add('hidden');$('loginShell').classList.remove('hidden')});
 $('appSelect').addEventListener('change',e=>{state.appId=e.target.value;render()});
 document.querySelectorAll('.nav').forEach(n=>n.addEventListener('click',()=>{state.section=n.dataset.section;render()}));
 })();
