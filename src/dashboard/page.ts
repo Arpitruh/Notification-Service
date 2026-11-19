@@ -1,4 +1,4 @@
-export const dashboardHtml = /* html */ \`<!doctype html>
+export const dashboardHtml = /* html */ `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -89,4 +89,4 @@ $('logout').addEventListener('click',()=>{state.token='';$('workspace').classLis
 $('appSelect').addEventListener('change',e=>{state.appId=e.target.value;render()});
 document.querySelectorAll('.nav').forEach(n=>n.addEventListener('click',()=>{state.section=n.dataset.section;render()}));
 })();
-</script></body></html>\`;
+</script></body></html>`;
