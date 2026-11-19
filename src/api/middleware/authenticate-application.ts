@@ -23,6 +23,7 @@ export async function authenticateApplication(req: Request, res: Response, next:
     });
     if (credential && !credential.revoked_at && credential.application.enabled) {
       res.locals.applicationName = credential.application.slug;
+      res.locals.applicationId = credential.application.id;
       next();
       return;
     }
@@ -33,6 +34,7 @@ export async function authenticateApplication(req: Request, res: Response, next:
         res.status(403).json({ error: 'Application disabled' }); return;
       }
       res.locals.applicationName = legacy.name;
+      res.locals.applicationId = registered?.id;
       next();
       return;
     }
