@@ -117,7 +117,7 @@ async function processJob(job: Job<Payload>): Promise<void> {
       // the ledger entry was persisted as accepted.
       await prisma.$transaction(async tx => {
         await tx.notificationAttempt.update({ where: { id: attempt.id },
-          data: { outcome: 'accepted', provider_message_id: result.providerMessageId,
+          data: { outcome: 'accepted', ...(result.providerMessageId ? { provider_message_id: result.providerMessageId } : {}),
             finished_at: new Date() } });
         const updated = await tx.notification.updateMany({
           where: { id, status: 'processing', locked_by: fence },
