@@ -75,7 +75,15 @@ export function startNotificationWorker(): Worker<NotificationJobData> {
       stopTimer();
 
       if (!result.success) {
-        throw new Error(result.error || 'Delivery failed');
+        const decision = classifyDelivery(result);
+        const code = result.errorCode || 'PROVIDER_FAILURE';
+        const message = safeDeliveryError(result.error || 'Delivery failed');
+        // The SMTP server might have accepted the message before the timeout.
+        if (decision === 'unknown' && !allowUnknownResend(templateId)) {
+          throw new UnrecoverableError('SMTP_UNKNOWN_OUTCOME: manual reconciliation required');
+        }
+        if (decision === 'permanent') throw new UnrecoverableError(code + ': ' + message);
+        throw new Error(code + ': ' + message);
       }
 
       await prisma.notification.update({
@@ -92,6 +100,7 @@ export function startNotificationWorker(): Worker<NotificationJobData> {
 
   worker.on('failed', async (job, err) => {
     if (!job) return;
+    try {
 
     const maxAttempts = job.opts.attempts ?? 1;
     const isUnrecoverable = err instanceof UnrecoverableError;
@@ -114,6 +123,11 @@ export function startNotificationWorker(): Worker<NotificationJobData> {
         where: { id: job.data.notificationId },
         data: { status: 'failed', error_log: { code: err.name, message: safeDeliveryError(err.message) } },
       });
+    }
+    } catch (dbErr) {
+      // The worker and API currently share a process; never create an
+      // unhandled rejection from an async EventEmitter listener.
+      console.error('[notification-worker] Failed to persist retry state:', dbErr);
     }
   });
 
