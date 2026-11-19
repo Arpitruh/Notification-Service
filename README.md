@@ -89,3 +89,38 @@ Add a template by creating a pair of files in `src/templates/`:
 
 Requests with an unknown `templateId` or missing required variables are rejected
 with HTTP 400 before any job is enqueued.
+
+## Optional CacheLoom v0.9 staging shadow (feature branch)
+
+The outbox relay can copy **metadata-only** notifications to a separate
+CacheLoom staging queue *after* successful BullMQ enqueue and PostgreSQL
+outbox commit. This is a best-effort comparison path, not an alternative
+delivery engine. It never changes the BullMQ worker, delivery policy, or
+`reconcileQueuedJobs()`; it cannot send emails or SMS.
+
+This feature is disabled unless all staging variables are set in a
+**non-production** environment:
+
+```bash
+NODE_ENV=test
+CACHELOOM_STAGING_SHADOW=true
+CACHELOOM_STAGING_URL=http://127.0.0.1:8080
+CACHELOOM_STAGING_KEY=<random-key-at-least-32-characters>
+```
+
+Remote CacheLoom instances must use HTTPS. Production mode rejects shadow
+activation even if someone accidentally sets the flag. The mirror uses
+`notifications-standard-staging`, stores only the notification and outbox
+IDs, and retains the deterministic outbox ID as its idempotency key.
+Recipients and rendered templates are **not** copied.
+
+**Testing:** GitHub Actions runs a mocked CacheLoom transport through the
+real Redis/PostgreSQL outbox relay, then exercises existing Redis recovery.
+The simulated CacheLoom worker tests live in CacheLoom v0.8. No deployed
+CacheLoom endpoint or paid provider is required in CI.
+
+**Important:** This branch is not a full BullMQ replacement. Its mock
+transport only proves enqueue shape and failure isolation; a true deployment
+needs a separate non-production CacheLoom server, comparison metrics and
+notification outcome/lease-fencing tests. Keep the feature disabled in any
+production Render service.

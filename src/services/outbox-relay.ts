@@ -1,6 +1,7 @@
 import { prisma } from '../db/prisma.js';
 import { notificationQueue } from '../queues/notification.queue.js';
 import { notificationsEnqueued } from '../metrics.js';
+import { readShadowConfig, mirrorOutboxToCacheloom } from './cacheloom-staging-shadow.js';
 
 // Process at most five 8-second Redis calls within the 60-second claim lease.
 const BATCH = 5;
@@ -63,7 +64,23 @@ async function publish(row: OutboxRow): Promise<void> {
         data: { status: 'queued' },
       }),
     ]);
-    if (n.status === 'pending') notificationsEnqueued.inc({ channel: n.channel });
+    if (n.status === 'pending') {
+      notificationsEnqueued.inc({ channel: n.channel });
+      // This mirror starts only after Redis enqueue + outbox commit succeeded.
+      // It never changes notification state and never blocks real delivery.
+      try {
+        const shadow = readShadowConfig();
+        if (shadow.enabled) {
+          void mirrorOutboxToCacheloom({
+            outboxId: event.id, notificationId: n.id,
+            scheduledFor: n.scheduled_for, priority: n.priority,
+          }, shadow).catch(() => console.warn('[outbox] staging shadow enqueue failed'));
+        }
+      } catch {
+        // Misconfiguration remains isolated from the production queue path.
+        console.warn('[outbox] staging shadow configuration rejected');
+      }
+    }
   } catch (e) {
     const backoff = Math.min(300_000, Math.pow(2, Math.min(event.attempts, 8)) * 1000);
     await prisma.notificationOutbox.updateMany({
