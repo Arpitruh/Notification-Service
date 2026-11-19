@@ -9,7 +9,7 @@ import type { SendNotificationInput } from '../middleware/validate.middleware.js
 export const sendNotification = async (req: Request, res: Response): Promise<void> => {
   const { recipient, channel, templateId, payloadData, idempotencyKey, priority, scheduledFor } =
     req.body as SendNotificationInput;
-  const callerService = (req.headers['x-caller-service'] as string) || 'default-service';
+  const callerService = res.locals.applicationName as string;
 
   const resolvedIdempotencyKey =
     idempotencyKey ||
