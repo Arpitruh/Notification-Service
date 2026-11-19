@@ -104,7 +104,7 @@ dashboardRoutes.post('/applications/:appId/templates', async (req, res) => {
 dashboardRoutes.patch('/applications/:appId/templates/:id', async (req, res) => {
   const appId = String(req.params.appId), id = String(req.params.id);
   if (!await access(res, appId, 'editor')) return fail(res, 403, 'Forbidden');
-  const body = parse(res, templateSchema.omit({ slug: true }).partial().extend({ published: z.boolean().optional() }), req.body);
+  const body = parse(res, templateSchema.omit({ slug: true }).partial().extend({ published: z.boolean().optional(), archived: z.boolean().optional() }), req.body);
   if (!body) return;
   const item = await prisma.mailTemplate.findFirst({ where: { id, application_id: appId } });
   if (!item) return fail(res, 404, 'Template not found');
@@ -172,4 +172,20 @@ dashboardRoutes.get('/applications/:appId/audit', async (req, res) => {
   if (!await access(res, appId, 'admin')) return fail(res, 403, 'Forbidden');
   const events = await prisma.dashboardAudit.findMany({ where: { application_id: appId }, orderBy: { created_at: 'desc' }, take: 100 });
   res.json({ events });
+});
+
+dashboardRoutes.delete('/applications/:appId/members/:subject', async (req, res) => {
+  const appId = String(req.params.appId), subject = String(req.params.subject);
+  if (!await access(res, appId, 'owner')) return fail(res, 403, 'Forbidden');
+  const membership = await prisma.dashboardMembership.findUnique({
+    where: { application_id_auth_subject: { application_id: appId, auth_subject: subject } },
+  });
+  if (!membership) return fail(res, 404, 'Member not found');
+  if (membership.role === 'owner') {
+    const owners = await prisma.dashboardMembership.count({ where: { application_id: appId, role: 'owner' } });
+    if (owners <= 1) return fail(res, 409, 'Cannot remove last owner');
+  }
+  await prisma.dashboardMembership.delete({ where: { id: membership.id } });
+  await audit(res, appId, 'member.remove', membership.id);
+  res.status(204).end();
 });
