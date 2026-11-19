@@ -26,10 +26,7 @@ app.get('/ready', async (_req: Request, res: Response) => {
     // Both persistent storage and job queue must work for notification delivery.
     await Promise.all([
       prisma.$queryRaw`SELECT 1`,
-      notificationQueue.client.then(async (redis) => {
-        const reply = await redis.ping();
-        if (reply !== 'PONG') throw new Error('Redis PING failed');
-      }),
+      notificationQueue.getJobCounts(),
     ]);
     res.status(200).json({ status: 'READY', database: 'connected', queue: 'connected' });
   } catch (err) {
