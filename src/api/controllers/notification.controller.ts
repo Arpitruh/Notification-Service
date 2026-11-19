@@ -18,8 +18,12 @@ export const sendNotification = async (req: Request, res: Response): Promise<voi
       .update(`${recipient}:${channel}:${templateId}:${JSON.stringify(payloadData)}`)
       .digest('hex');
 
+  // Scope idempotency to the authenticated application, not all tenants.
+  const scopedIdempotencyKey = crypto.createHash('sha256')
+    .update(`${callerService}:${resolvedIdempotencyKey}`).digest('hex');
+
   const existing = await prisma.notification.findUnique({
-    where: { idempotency_key: resolvedIdempotencyKey },
+    where: { idempotency_key: scopedIdempotencyKey },
   });
 
   // A record that is still in-flight or already delivered is a true idempotent hit.
@@ -55,7 +59,7 @@ export const sendNotification = async (req: Request, res: Response): Promise<voi
       })
     : await prisma.notification.create({
         data: {
-          idempotency_key: resolvedIdempotencyKey,
+          idempotency_key: scopedIdempotencyKey,
           recipient,
           channel,
           template_id: templateId,
