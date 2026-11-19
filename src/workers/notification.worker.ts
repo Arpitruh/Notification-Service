@@ -122,7 +122,7 @@ async function processJob(job: Job<Payload>): Promise<void> {
         const updated = await tx.notification.updateMany({
           where: { id, status: 'processing', locked_by: fence },
           data: { status: 'sent', locked_by: null, locked_until: null,
-            provider_message_id: result.providerMessageId },
+            ...(result.providerMessageId ? { provider_message_id: result.providerMessageId } : {}) },
         });
         if (!updated.count) throw new Error('Lost delivery claim after provider acceptance');
       });
