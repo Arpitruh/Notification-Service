@@ -1,12 +1,13 @@
 import { Queue } from 'bullmq';
-import { ENV } from '../config/env.js';
+import { redisConnection } from '../config/redis.js';
 
 export const notificationQueue = new Queue('notifications-standard', {
-  connection: { host: ENV.REDIS_HOST, port: ENV.REDIS_PORT },
+  connection: redisConnection,
   defaultJobOptions: {
     attempts: 3,
     backoff: { type: 'exponential', delay: 5000 },
+    // PostgreSQL is the authority; a removed BullMQ job ID is not an idempotency guard.
     removeOnComplete: true,
-    removeOnFail: false,
+    removeOnFail: { age: 7 * 24 * 3600, count: 5000 },
   },
 });
