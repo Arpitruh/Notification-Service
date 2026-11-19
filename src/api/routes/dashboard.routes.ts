@@ -10,10 +10,17 @@ export const dashboardRoutes = Router();
 dashboardRoutes.post('/login', rateLimit({ windowMs: 60_000, limit: 5 }), async (req, res) => {
   const credentials = z.object({ email: z.email(), password: z.string().min(1) }).safeParse(req.body);
   if (!credentials.success) { res.status(400).json({ error: 'Invalid credentials format' }); return; }
-  if (!process.env.AUTH_SERVICE_URL) { res.status(503).json({ error: 'Dashboard login not configured' }); return; }
+  if (!process.env.AUTH_SERVICE_URL || !process.env.AUTH_SERVICE_KEY) { res.status(503).json({ error: 'Dashboard authentication connection not configured' }); return; }
   try {
     const response = await fetch(`${process.env.AUTH_SERVICE_URL.replace(/\/$/, '')}/api/v1/auth/login`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
+      // The Auth Service validates this backend credential before using the
+      // forwarded client IP for its per-IP login limiter. Browser-supplied
+      // proxy headers are never forwarded as authentication claims.
+      method: 'POST', headers: {
+        'content-type': 'application/json',
+        'x-auth-service-key': process.env.AUTH_SERVICE_KEY!,
+        'x-original-client-ip': req.ip || '127.0.0.1',
+      },
       body: JSON.stringify(credentials.data), signal: AbortSignal.timeout(8000),
     });
     if (!response.ok) {
