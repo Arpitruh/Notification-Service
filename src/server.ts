@@ -7,6 +7,7 @@ import { notificationRoutes } from './api/routes/notification.routes.js';
 import { startNotificationWorker } from './workers/notification.worker.js';
 import { prisma } from './db/prisma.js';
 import { registry } from './metrics.js';
+import { notificationQueue } from './queues/notification.queue.js';
 
 const app = express();
 
@@ -20,10 +21,19 @@ app.get('/health', (_req: Request, res: Response) => {
 
 app.get('/ready', async (_req: Request, res: Response) => {
   try {
-    await prisma.$queryRaw`SELECT 1`;
-    res.status(200).json({ status: 'READY', database: 'connected' });
+    // Both persistent storage and job queue must work for notification delivery.
+    await Promise.all([
+      prisma.$queryRaw`SELECT 1`,
+      notificationQueue.client.then(async (redis) => {
+        const reply = await redis.ping();
+        if (reply !== 'PONG') throw new Error('Redis PING failed');
+      }),
+    ]);
+    res.status(200).json({ status: 'READY', database: 'connected', queue: 'connected' });
   } catch (err) {
-    res.status(503).json({ status: 'NOT_READY', error: (err as Error).message });
+    // Details remain server-side; never leak connection strings or internals.
+    console.error('[readiness] Dependency check failed:', err);
+    res.status(503).json({ status: 'NOT_READY', error: 'Dependency unavailable' });
   }
 });
 
@@ -54,6 +64,7 @@ const gracefulShutdown = async (signal: string) => {
   console.log(`Received ${signal}. Shutting down gracefully...`);
   server.close(async () => {
     await worker.close();
+    await notificationQueue.close();
     await prisma.$disconnect();
     process.exit(0);
   });
