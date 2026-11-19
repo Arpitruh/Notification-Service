@@ -30,7 +30,11 @@ const PERMANENT_ERRORS = new Set(['EAUTH', 'EENVELOPE', 'EMESSAGE']);
  */
 export function classifySmtpError(err: unknown): DeliveryFailure {
   const e = (err ?? {}) as { message?: string; code?: string; responseCode?: number; command?: string };
-  const base = { error: String(e.message || 'Email delivery failed'), smtpResponseCode: e.responseCode, smtpCommand: e.command };
+  const base = {
+    error: String(e.message || 'Email delivery failed'),
+    ...(typeof e.responseCode === 'number' ? { smtpResponseCode: e.responseCode } : {}),
+    ...(typeof e.command === 'string' ? { smtpCommand: e.command } : {}),
+  };
   const afterData = typeof e.command === 'string' && /^DATA\b/i.test(e.command);
   if (e.code === 'EAUTH') return { ...base, errorCode: 'SMTP_AUTH', retryable: false, ambiguous: false };
   if (typeof e.responseCode === 'number') {
