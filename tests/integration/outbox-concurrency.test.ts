@@ -75,6 +75,48 @@ describe.skipIf(process.env.RUN_DB_TESTS !== '1')('notification transactional ou
       if (id) await prisma.notification.deleteMany({ where: { id } });
     }
   });
+
+  it('rebuilds a published-but-lost Redis job from the PostgreSQL outbox', async () => {
+    const { prisma } = await import('../../src/db/prisma.ts');
+    const { notificationQueue } = await import('../../src/queues/notification.queue.ts');
+    const { drainOutboxOnce, reconcileQueuedJobs } = await import('../../src/services/outbox-relay.ts');
+    const id = crypto.randomUUID();
+    const firstOutbox = crypto.randomUUID();
+    let nextOutbox = '';
+    try {
+      await prisma.notification.create({ data: {
+        id, idempotency_key: crypto.randomUUID(), caller_service: 'ci-test',
+        recipient: 'rebuild@example.test', channel: 'email',
+        template_id: 'welcome', payload_data: {}, status: 'pending',
+        outbox_events: { create: { id: firstOutbox } },
+      } });
+      await drainOutboxOnce();
+      expect((await prisma.notification.findUniqueOrThrow({ where: { id } })).status).toBe('queued');
+      const lostJob = await notificationQueue.getJob(firstOutbox);
+      expect(lostJob).toBeTruthy();
+      await lostJob!.remove(); // Simulate Redis losing the queued job.
+      await prisma.notification.update({ where: { id },
+        data: { updated_at: new Date(Date.now() - 11 * 60_000) } });
+      expect(await reconcileQueuedJobs()).toBeGreaterThanOrEqual(1);
+      expect((await prisma.notification.findUniqueOrThrow({ where: { id } })).status).toBe('pending');
+      const outboxes = await prisma.notificationOutbox.findMany({
+        where: { notification_id: id }, orderBy: { created_at: 'desc' },
+      });
+      expect(outboxes).toHaveLength(2);
+      nextOutbox = outboxes.find(row => row.id !== firstOutbox)!.id;
+      await drainOutboxOnce();
+      expect(await notificationQueue.getJob(nextOutbox)).toBeTruthy();
+      expect((await prisma.notification.findUniqueOrThrow({ where: { id } })).status).toBe('queued');
+    } finally {
+      for (const jobId of [firstOutbox, nextOutbox]) {
+        if (!jobId) continue;
+        const job = await notificationQueue.getJob(jobId);
+        if (job) await job.remove().catch(() => undefined);
+      }
+      await prisma.notification.deleteMany({ where: { id } });
+    }
+  });
+
   it('keeps the committed outbox event when Redis enqueue fails, then publishes on retry', async () => {
     const { vi } = await import('vitest');
     const { prisma } = await import('../../src/db/prisma.ts');
