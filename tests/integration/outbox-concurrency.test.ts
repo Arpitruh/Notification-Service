@@ -9,8 +9,8 @@ import type { Request, Response } from 'express';
  */
 describe.skipIf(process.env.RUN_DB_TESTS !== '1')('notification transactional outbox (staging DB)', () => {
   it('creates one logical record/outbox row under 20 concurrent requests', async () => {
-    const { prisma } = await import('../../src/db/prisma.js');
-    const { sendNotification } = await import('../../src/api/controllers/notification.controller.js');
+    const { prisma } = await import('../../src/db/prisma.ts');
+    const { sendNotification } = await import('../../src/api/controllers/notification.controller.ts');
     const key = 'concurrency-test-' + crypto.randomUUID();
     const app = 'test-' + crypto.randomUUID().slice(0, 8);
     const results: Array<{ status: number; body: Record<string, unknown> }> = [];
@@ -47,8 +47,8 @@ describe.skipIf(process.env.RUN_DB_TESTS !== '1')('notification transactional ou
   });
 
   it('returns 409 when one idempotency key is reused with a changed recipient', async () => {
-    const { prisma } = await import('../../src/db/prisma.js');
-    const { sendNotification } = await import('../../src/api/controllers/notification.controller.js');
+    const { prisma } = await import('../../src/db/prisma.ts');
+    const { sendNotification } = await import('../../src/api/controllers/notification.controller.ts');
     const key = 'conflict-test-' + crypto.randomUUID();
     const app = 'test-' + crypto.randomUUID().slice(0, 8);
     let id = '';
