@@ -75,4 +75,52 @@ describe.skipIf(process.env.RUN_DB_TESTS !== '1')('notification transactional ou
       if (id) await prisma.notification.deleteMany({ where: { id } });
     }
   });
+  it('keeps the committed outbox event when Redis enqueue fails, then publishes on retry', async () => {
+    const { vi } = await import('vitest');
+    const { prisma } = await import('../../src/db/prisma.ts');
+    const { sendNotification } = await import('../../src/api/controllers/notification.controller.ts');
+    const { notificationQueue } = await import('../../src/queues/notification.queue.ts');
+    const { drainOutboxOnce } = await import('../../src/services/outbox-relay.ts');
+    let status = 200;
+    let result: Record<string, unknown> = {};
+    const res = { locals: { applicationName: 'outbox-recovery-test' },
+      status(n: number) { status = n; return this; },
+      json(body: Record<string, unknown>) { result = body; return this; },
+    } as unknown as Response;
+    const req = { headers: {}, body: {
+      recipient: 'recovery@example.test',
+      channel: 'email', templateId: 'welcome',
+      payloadData: {}, idempotencyKey: crypto.randomUUID(),
+    } } as Request;
+    let outboxId = '';
+    let notificationId = '';
+    const originalAdd = notificationQueue.add.bind(notificationQueue);
+    try {
+      await sendNotification(req, res);
+      expect(status).toBe(202);
+      notificationId = String(result.notificationId);
+      const outbox = await prisma.notificationOutbox.findFirstOrThrow({ where: { notification_id: notificationId } });
+      outboxId = outbox.id;
+      const spy = vi.spyOn(notificationQueue, 'add').mockRejectedValueOnce(new Error('Redis offline'));
+      await drainOutboxOnce();
+      spy.mockRestore();
+      expect((await prisma.notificationOutbox.findUniqueOrThrow({ where: { id: outboxId } })).published_at).toBeNull();
+      expect((await prisma.notification.findUniqueOrThrow({ where: { id: notificationId } })).status).toBe('pending');
+
+      await prisma.notificationOutbox.update({ where: { id: outboxId },
+        data: { next_attempt_at: new Date(Date.now() - 1000), claimed_until: null } });
+      await drainOutboxOnce();
+      expect((await prisma.notificationOutbox.findUniqueOrThrow({ where: { id: outboxId } })).published_at).not.toBeNull();
+      expect((await prisma.notification.findUniqueOrThrow({ where: { id: notificationId } })).status).toBe('queued');
+    } finally {
+      vi.restoreAllMocks();
+      if (outboxId) {
+        const job = await notificationQueue.getJob(outboxId);
+        if (job) await job.remove().catch(() => undefined);
+      }
+      if (notificationId) await prisma.notification.deleteMany({ where: { id: notificationId } });
+      await notificationQueue.close();
+    }
+  });
+
 });
