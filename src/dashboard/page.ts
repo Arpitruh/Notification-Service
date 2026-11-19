@@ -69,7 +69,7 @@ table{min-width:590px}
 @media(max-width:480px){.footer-main{grid-template-columns:1fr}.footer-main>div:first-child{grid-column:auto}#login{padding:22px}.top select{max-width:100%}}
 </style>
 </head><body>
-<div class="login-shell">
+<div id="loginShell" class="login-shell">
 <section id="login">
 <div class="brand"><span class="brandmark" aria-hidden="true">✉</span><span>Notification Service</span></div>
 <h1>Welcome back</h1><p>Use your Auth Service account to manage applications, templates, and users.</p>
@@ -202,8 +202,8 @@ function createCredential(){
 }
 
 async function audit(){const {events}=await api('/applications/'+state.appId+'/audit');const p=panel();p.append(header('Recent changes'));p.append(table(['When','Operator','Action','Resource'],events.map(e=>[new Date(e.created_at).toLocaleString(),e.actor,e.action,e.resource_id||'—'])))}
-$('loginForm').addEventListener('submit',async e=>{e.preventDefault();$('loginError').textContent='';try{const response=await fetch('/api/v1/dashboard/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:$('loginEmail').value,password:$('loginPassword').value})});const data=await response.json();if(!response.ok)throw Error(data.error||'Login failed');state.token=data.accessToken;$('loginPassword').value='';await reloadApps();$('login').classList.add('hidden');$('workspace').classList.remove('hidden');render()}catch(err){$('loginError').textContent=err.message}});
-$('logout').addEventListener('click',()=>{state.token='';$('workspace').classList.add('hidden');$('login').classList.remove('hidden')});
+$('loginForm').addEventListener('submit',async e=>{e.preventDefault();$('loginError').textContent='';try{const response=await fetch('/api/v1/dashboard/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:$('loginEmail').value,password:$('loginPassword').value})});const data=await response.json();if(!response.ok)throw Error(data.error||'Login failed');state.token=data.accessToken;$('loginPassword').value='';await reloadApps();$('loginShell').classList.add('hidden');$('workspace').classList.remove('hidden');render()}catch(err){$('loginError').textContent=err.message}});
+$('logout').addEventListener('click',()=>{state.token='';$('workspace').classList.add('hidden');$('loginShell').classList.remove('hidden')});
 $('appSelect').addEventListener('change',e=>{state.appId=e.target.value;render()});
 document.querySelectorAll('.nav').forEach(n=>n.addEventListener('click',()=>{state.section=n.dataset.section;render()}));
 })();
