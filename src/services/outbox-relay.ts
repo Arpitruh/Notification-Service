@@ -1,9 +1,9 @@
-import crypto from 'node:crypto';
 import { prisma } from '../db/prisma.js';
 import { notificationQueue } from '../queues/notification.queue.js';
 import { notificationsEnqueued } from '../metrics.js';
 
-const BATCH = 30;
+// Process at most five 8-second Redis calls within the 60-second claim lease.
+const BATCH = 5;
 const LEASE_MS = 60_000;
 const PERIOD_MS = 2_000;
 const ENQUEUE_TIMEOUT_MS = 8_000;
