@@ -16,7 +16,19 @@ dashboardRoutes.post('/login', rateLimit({ windowMs: 60_000, limit: 5 }), async 
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify(credentials.data), signal: AbortSignal.timeout(8000),
     });
-    if (!response.ok) { res.status(401).json({ error: 'Invalid credentials' }); return; }
+    if (!response.ok) {
+      // Do not misreport upstream rate limits/outages as wrong passwords.
+      if (response.status === 401 || response.status === 400) {
+        res.status(401).json({ error: 'Email or password is incorrect. Use your Auth Service account.' });
+      } else if (response.status === 429 || response.status === 423) {
+        res.status(429).json({ error: 'Too many login attempts. Please try again after the rate-limit window.' });
+      } else if (response.status >= 500) {
+        res.status(503).json({ error: 'Auth Service is temporarily unavailable. Try again shortly.' });
+      } else {
+        res.status(502).json({ error: 'Auth Service rejected the sign-in request.' });
+      }
+      return;
+    }
     const data: unknown = await response.json();
     if (!data || typeof data !== 'object' || !('accessToken' in data) || typeof data.accessToken !== 'string') {
       res.status(502).json({ error: 'Invalid authentication response' }); return;
