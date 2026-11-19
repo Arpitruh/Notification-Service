@@ -181,17 +181,28 @@ export function startNotificationWorker(): Worker<Payload> {
 
 /** Claims whose worker died are unknown until reconciled, not blindly resent. */
 export async function reapExpiredDeliveryClaims(): Promise<number> {
+  const legacyCutoff = new Date(Date.now() - 10 * 60_000);
   const stale = await prisma.notification.findMany({
-    where: { status: 'processing', locked_until: { lt: new Date() } },
+    where: {
+      status: 'processing',
+      OR: [
+        { locked_by: { not: null }, locked_until: { lt: new Date() } },
+        // Old pre-Phase-1 workers never stamped a lease. Do not auto-resend
+        // an interrupted SMTP request; classify stale legacy rows as unknown.
+        { locked_by: null, updated_at: { lt: legacyCutoff } },
+      ],
+    },
     select: { id: true, locked_by: true },
     take: 50,
   });
   let count = 0;
   for (const n of stale) {
-    if (!n.locked_by) continue;
     const changed = await prisma.notification.updateMany({
-      where: { id: n.id, status: 'processing', locked_by: n.locked_by,
-        locked_until: { lt: new Date() } },
+      where: n.locked_by
+        ? { id: n.id, status: 'processing', locked_by: n.locked_by,
+            locked_until: { lt: new Date() } }
+        : { id: n.id, status: 'processing', locked_by: null,
+            updated_at: { lt: legacyCutoff } },
       data: { status: 'unknown', locked_by: null, locked_until: null,
         error_log: { code: 'DELIVERY_LEASE_EXPIRED' } },
     });
