@@ -42,7 +42,16 @@ router.post('/events/user.registered', sendLimiter, authenticateApplication, asy
       payloadData: { name: name?.trim() || 'there', appName: app.name, dashboardUrl: app.dashboard_url },
       idempotencyKey: 'registration-welcome:' + userId,
     };
-    validateSendNotification(req, res, () => void validateTemplate(req, res, () => void sendNotification(req, res).catch(next)));
+    // Preserve middleware errors; the old callback ignored next(err) and could
+    // enqueue a notification after template validation had failed.
+    res.locals.idempotencyMode = 'event';
+    validateSendNotification(req, res, (error?: unknown) => {
+      if (error) { next(error); return; }
+      void validateTemplate(req, res, (templateError?: unknown) => {
+        if (templateError) { next(templateError); return; }
+        void sendNotification(req, res).catch(next);
+      });
+    });
   } catch (err) { next(err); }
 });
 
