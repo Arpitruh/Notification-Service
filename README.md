@@ -4,7 +4,7 @@ A notification microservice with an HTTP API and a BullMQ background worker.
 Sends templated emails (file-based Handlebars templates) and mock SMS, backed by
 Postgres (audit + idempotency) and Redis (job queue).
 
-## Architecture
+## Notification Dashboard (feature branch)\n\nOpen \`/dashboard\` (root redirects there) to use the standalone web panel.\nThe dashboard uses **Auth Service login and token introspection**.\nConfigure \`AUTH_SERVICE_URL\`, \`AUTH_SERVICE_KEY\`,\n\`DASHBOARD_ADMIN_SUBJECTS\` and \`APP_API_KEYS\` before deployment.\nTemplate and recipient management is scoped per application with dashboard\nroles (owner/admin/editor/viewer), audited writes, and archived templates.\nAn application must be created in the dashboard with a slug matching its\n\`APP_API_KEYS\` application name for database-managed templates to send.\n\nPublished dashboard templates are rendered and snapshotted at enqueue time;\nexisting file-based templates remain available only for app keys without a\nregistered dashboard application during migration. **This feature is not fully\nproduction hardened**: API keys are still environment-managed, recipient imports,\ntemplate version history, opt-outs, real SMS, push, and dashboard pagination\nare not implemented. Template archives are reversible; application-user\n\`DELETE\` deactivates rather than physically deleting records.\n\n## Architecture
 
 - **API** (`src/server.ts`) — Express app exposing `POST /api/v1/notifications/send`,
   plus `/health`, `/ready`, and `/metrics`.
