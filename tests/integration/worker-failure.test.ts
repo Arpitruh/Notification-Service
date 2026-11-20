@@ -100,6 +100,64 @@ describe.skipIf(process.env.RUN_DB_TESTS !== '1')('worker failure injection (sta
     }
   });
 
+
+  it('holds an ambiguous SMTP DATA timeout for review instead of blindly resending', async () => {
+    const { prisma } = await import('../../src/db/prisma.ts');
+    const { notificationQueue } = await import('../../src/queues/notification.queue.ts');
+    const { EmailProvider } = await import('../../src/providers/email.provider.ts');
+    const { startNotificationWorker } = await import('../../src/workers/notification.worker.ts');
+    const id = crypto.randomUUID();
+    const jobId = 'smtp-ambiguous-' + id;
+    const duplicateId = 'smtp-retry-' + id;
+    const send = vi.spyOn(EmailProvider.prototype, 'sendRendered').mockResolvedValue({
+      success: false,
+      error: 'Synthetic timeout after SMTP DATA',
+      errorCode: 'ETIMEDOUT',
+      ambiguous: true,
+      retryable: true,
+    });
+    let worker: ReturnType<typeof startNotificationWorker> | undefined;
+    try {
+      await prisma.notification.create({ data: {
+        id, idempotency_key: crypto.randomUUID(),
+        recipient: 'ambiguous@example.test', channel: 'email',
+        template_id: 'welcome', payload_data: {}, status: 'queued',
+        caller_service: 'ci-test',
+        rendered_email: { subject: 'Test', html: '<p>Test</p>' },
+      } });
+      worker = startNotificationWorker();
+      await notificationQueue.add('dispatch', { notificationId: id }, { jobId, attempts: 3 });
+      let state: string | undefined;
+      for (let i = 0; i < 80; i++) {
+        state = (await prisma.notification.findUnique({ where: { id } }))?.status;
+        if (state === 'unknown') break;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      expect(state).toBe('unknown');
+      const attempt = await prisma.notificationAttempt.findFirstOrThrow({
+        where: { notification_id: id },
+      });
+      expect(attempt.outcome).toBe('unknown');
+      expect(attempt.retryable).toBe(false);
+      expect(attempt.error_code).toBe('ETIMEDOUT');
+      expect(send).toHaveBeenCalledTimes(1);
+
+      // Even a second BullMQ job must not turn an uncertain result into a
+      // second external send. Only an audited operator replay may do that.
+      await notificationQueue.add('dispatch', { notificationId: id }, { jobId: duplicateId });
+      await new Promise(resolve => setTimeout(resolve, 400));
+      expect(send).toHaveBeenCalledTimes(1);
+    } finally {
+      if (worker) await worker.close();
+      for (const key of [jobId, duplicateId]) {
+        const job = await notificationQueue.getJob(key);
+        if (job) await job.remove().catch(() => undefined);
+      }
+      await prisma.notification.deleteMany({ where: { id } });
+      send.mockRestore();
+    }
+  }, 15_000);
+
   it('does not resend if SMTP accepted but the database cannot persist success', async () => {
     const { prisma } = await import('../../src/db/prisma.ts');
     const { notificationQueue } = await import('../../src/queues/notification.queue.ts');
