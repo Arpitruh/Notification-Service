@@ -55,3 +55,44 @@ jobs:
       - run: git rev-parse HEAD && grep -n 'async function accept' src/api/controllers/notification.controller.ts
       - run: npx vitest run tests/integration/outbox-concurrency.test.ts
       - run: npx vitest run tests/integration/worker-failure.test.ts
+      - name: Check Auth registration through HTTP and mocked email delivery
+        run: npx vitest run tests/integration/registration-event-http.test.ts
+      # Deliberately wipes only this job's disposable localhost Redis.
+      - name: Rebuild queued jobs after disposable Redis data loss
+        env:
+          RUN_REDIS_LOSS_TESTS: '1'
+        run: npx vitest run tests/integration/redis-loss-ci.test.ts
+      - name: Crash and restart disposable Redis, then verify outbox recovery
+        env:
+          RUN_REDIS_RESTART_TESTS: '1'
+        run: npx vitest run tests/integration/redis-restart-ci.test.ts
+
+  # Read-only probes: no test accounts, queue writes, Redis mutations or email.
+  # Both services are on Render free instances, so allow time for a cold start.
+  production-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Check live Notification and Auth liveness and dependency readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          for base in "https://notification-service-18dh.onrender.com" "https://login-service-8akx.onrender.com"; do
+            for endpoint in health ready; do
+              echo "::group::${base}/${endpoint}"
+              status="000"
+              for attempt in 1 2 3 4 5 6; do
+                status=$(curl --silent --show-error --location --max-time 45 \
+                  --output /dev/null --write-out '%{http_code}' \
+                  "${base}/${endpoint}" || true)
+                echo "Attempt ${attempt}: HTTP ${status}"
+                if [ "${status}" = 200 ]; then break; fi
+                sleep 8
+              done
+              echo "::endgroup::"
+              if [ "${status}" != 200 ]; then
+                echo "::error::${base}/${endpoint} did not return HTTP 200 (last: ${status})"
+                exit 1
+              fi
+            done
+          done

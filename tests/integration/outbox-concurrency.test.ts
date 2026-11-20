@@ -76,6 +76,59 @@ describe.skipIf(process.env.RUN_DB_TESTS !== '1')('notification transactional ou
     }
   });
 
+  it('deduplicates registration events per application and user ID', async () => {
+    const { prisma } = await import('../../src/db/prisma.ts');
+    const { sendNotification } = await import('../../src/api/controllers/notification.controller.ts');
+    const userId = crypto.randomUUID();
+    const firstApp = 'registration-' + crypto.randomUUID().slice(0, 8);
+    const secondApp = 'registration-' + crypto.randomUUID().slice(0, 8);
+    const notificationIds: string[] = [];
+
+    async function submit(app: string, recipient: string) {
+      let status = 200;
+      let body: Record<string, unknown> = {};
+      const res = {
+        locals: { applicationName: app, idempotencyMode: 'event' },
+        status(value: number) { status = value; return this; },
+        json(value: Record<string, unknown>) { body = value; return this; },
+      } as unknown as Response;
+      await sendNotification({ headers: {}, body: {
+        recipient, channel: 'email', templateId: 'welcome',
+        payloadData: { name: 'Someone', appName: app, dashboardUrl: 'https://example.test' },
+        idempotencyKey: 'registration-welcome:' + userId,
+      } } as Request, res);
+      if (body.notificationId) notificationIds.push(String(body.notificationId));
+      return { status, id: String(body.notificationId) };
+    }
+
+    try {
+      const created = await submit(firstApp, 'first@example.test');
+      const duplicate = await submit(firstApp, 'first@example.test');
+      // If a user's address changed during retry, the immutable registration
+      // identity still must not produce a second welcome notification.
+      const changedEmailRetry = await submit(firstApp, 'changed@example.test');
+      const isolated = await submit(secondApp, 'first@example.test');
+
+      expect(created.status).toBe(202);
+      expect(duplicate.status).toBe(200);
+      expect(changedEmailRetry.status).toBe(200);
+      expect(duplicate.id).toBe(created.id);
+      expect(changedEmailRetry.id).toBe(created.id);
+      expect(isolated.status).toBe(202);
+      expect(isolated.id).not.toBe(created.id);
+
+      expect(await prisma.notificationOutbox.count({
+        where: { notification_id: { in: [created.id, isolated.id] } },
+      })).toBe(2);
+    } finally {
+      if (notificationIds.length) {
+        await prisma.notification.deleteMany({
+          where: { id: { in: notificationIds } },
+        });
+      }
+    }
+  });
+
   it('rebuilds a published-but-lost Redis job from the PostgreSQL outbox', async () => {
     const { prisma } = await import('../../src/db/prisma.ts');
     const { notificationQueue } = await import('../../src/queues/notification.queue.ts');
