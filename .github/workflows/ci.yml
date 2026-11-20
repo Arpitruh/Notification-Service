@@ -55,3 +55,8 @@ jobs:
       - run: git rev-parse HEAD && grep -n 'async function accept' src/api/controllers/notification.controller.ts
       - run: npx vitest run tests/integration/outbox-concurrency.test.ts
       - run: npx vitest run tests/integration/worker-failure.test.ts
+      # Deliberately wipes only this job's disposable localhost Redis.
+      - name: Rebuild queued jobs after disposable Redis data loss
+        env:
+          RUN_REDIS_LOSS_TESTS: '1'
+        run: npx vitest run tests/integration/redis-loss-ci.test.ts
