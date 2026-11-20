@@ -35,8 +35,13 @@ describe.skipIf(!safe)('rebuild queued work after CI-only Redis data loss', () =
 
       // Simulate losing *all* queued Redis state, not just deleting one job.
       // This can only run with the disposable CI database and localhost Redis.
-      const redis = await notificationQueue.client;
-      await redis.flushdb();
+      const { default: Redis } = await import('ioredis');
+      const disposableRedis = new Redis({ host: '127.0.0.1', port: 6379 });
+      try {
+        await disposableRedis.flushdb();
+      } finally {
+        await disposableRedis.quit();
+      }
       expect(await notificationQueue.getJob(initialOutboxId)).toBeFalsy();
 
       // Reconciliation intentionally ignores recent jobs, allowing a grace
