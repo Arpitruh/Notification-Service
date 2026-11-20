@@ -62,3 +62,7 @@ jobs:
         env:
           RUN_REDIS_LOSS_TESTS: '1'
         run: npx vitest run tests/integration/redis-loss-ci.test.ts
+      - name: Crash and restart disposable Redis, then verify outbox recovery
+        env:
+          RUN_REDIS_RESTART_TESTS: '1'
+        run: npx vitest run tests/integration/redis-restart-ci.test.ts
