@@ -43,7 +43,50 @@ export class EmailProvider {
     return '<' + id + '@' + domain + '>';
   }
 
+  /**
+   * HTTPS transport for free Render instances, where standard SMTP ports are
+   * blocked. Resend accepts idempotency keys so worker retries don't duplicate
+   * provider-accepted messages. Its HTTP 2xx is acceptance, not inbox delivery.
+   */
+  private async deliverViaResend(recipient: string, subject: string, html: string, opts?: SendOptions): Promise<DeliveryResult> {
+    const from = process.env.RESEND_FROM?.trim();
+    if (!from) return { success: false, error: 'RESEND_FROM is not configured', errorCode: 'EMAIL_CONFIG', retryable: false };
+    try {
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+          'Content-Type': 'application/json',
+          ...(opts?.idempotencyId ? { 'Idempotency-Key': `notification-${opts.idempotencyId}` } : {}),
+        },
+        body: JSON.stringify({ from, to: [recipient], subject, html }),
+        signal: AbortSignal.timeout(12_000),
+      });
+      if (!response.ok) {
+        return {
+          success: false,
+          error: 'Email provider rejected the request',
+          errorCode: `EMAIL_HTTP_${response.status}`,
+          retryable: response.status === 429 || response.status >= 500,
+          ambiguous: false,
+        };
+      }
+      const data: unknown = await response.json();
+      if (!data || typeof data !== 'object' || !('id' in data) || typeof data.id !== 'string') {
+        return { success: false, error: 'Unexpected email provider response', errorCode: 'EMAIL_PROVIDER_RESPONSE', retryable: false, ambiguous: true };
+      }
+      return { success: true, providerMessageId: data.id };
+    } catch {
+      // The remote API may have accepted a request before network failure.
+      // The provider-side idempotency key makes a subsequent retry safer.
+      return { success: false, error: 'Email provider connection failed', errorCode: 'EMAIL_PROVIDER_NETWORK', retryable: !!opts?.idempotencyId, ambiguous: !opts?.idempotencyId };
+    }
+  }
+
   private async deliver(recipient: string, subject: string, html: string, opts?: SendOptions): Promise<DeliveryResult> {
+    if (process.env.RESEND_API_KEY?.trim()) {
+      return this.deliverViaResend(recipient, subject, html, opts);
+    }
     try {
       const info = await this.transporter.sendMail({
         from: ENV.SMTP.from, to: recipient, subject, html,
