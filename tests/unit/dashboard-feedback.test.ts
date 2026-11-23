@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { dashboardHtml } from '../../src/dashboard/page.js';
 import { Script } from 'node:vm';
 
 const source = readFileSync(new URL('../../src/dashboard/page.ts', import.meta.url), 'utf8');
-const script = source.match(/<script>\s*([\s\S]*?)<\/script>/)?.[1];
+// The browser executes the cooked HTML string, not the raw template literal source.
+const script = dashboardHtml.match(/<script>\s*([\s\S]*?)<\/script>/)?.[1];
 
 describe('dashboard interaction feedback', () => {
   it('has valid browser-side JavaScript', () => {
