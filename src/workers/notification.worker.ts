@@ -90,7 +90,7 @@ async function processJob(job: Job<Payload>): Promise<void> {
 
   const attempt = await prisma.notificationAttempt.create({
     data: { notification_id: id, attempt_number: job.attemptsMade + 1,
-      provider: channel === 'email' ? (process.env.RESEND_API_KEY?.trim() ? 'resend' : 'smtp') : channel, outcome: 'started' },
+      provider: channel === 'email' ? (process.env.EMAIL_PROVIDER?.trim() === 'gmail' ? 'gmail' : process.env.RESEND_API_KEY?.trim() ? 'resend' : 'smtp') : channel, outcome: 'started' },
   });
   const stopTimer = notificationDeliveryDuration.startTimer({ channel });
   let result: import('../providers/email.provider.js').DeliveryResult;
