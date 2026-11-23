@@ -36,7 +36,11 @@ dashboardRoutes.post('/login', rateLimit({ windowMs: 60_000, limit: 5 }), async 
       if (response.status === 401 || response.status === 400) {
         res.status(401).json({ error: 'Email or password is incorrect. Use your Auth Service account.' });
       } else if (response.status === 429 || response.status === 423) {
-        res.status(429).json({ error: 'Too many login attempts. Please try again after the rate-limit window.' });
+        // Preserve the upstream cooldown. Never disable or reset its shared
+        // per-IP and per-account limits to make the dashboard login succeed.
+        const retryAfter = response.headers.get('retry-after');
+        if (retryAfter && /^\d+$/.test(retryAfter)) res.setHeader('Retry-After', retryAfter);
+        res.status(429).json({ error: 'Too many login attempts. Please wait before trying again.' });
       } else if (response.status >= 500) {
         res.status(503).json({ error: 'Auth Service is temporarily unavailable. Try again shortly.' });
       } else {
