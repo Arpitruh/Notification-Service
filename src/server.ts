@@ -12,6 +12,10 @@ import { notificationQueue } from './queues/notification.queue.js';
 import { dashboardRoutes } from './api/routes/dashboard.routes.js';
 import { dashboardHtml } from './dashboard/page.js';
 
+import { demoHtml } from './dashboard/demo.js';
+
+import { demoRoutes } from './api/routes/demo.routes.js';
+
 const app = express();
 // Render terminates TLS in front of this service. Trust one proxy hop so
 // express-rate-limit uses the forwarded client IP instead of a shared proxy IP.
@@ -55,11 +59,18 @@ app.get('/metrics', async (req: Request, res: Response) => {
 });
 
 app.get('/', (_req: Request, res: Response) => res.redirect('/dashboard'));
+app.get('/demo', (_req: Request, res: Response) => {
+  res.set('Cache-Control', 'no-store');
+  res.set('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; connect-src 'self' https://challenges.cloudflare.com; base-uri 'none'; frame-ancestors 'none'");
+  const key = process.env.DEMO_TURNSTILE_SITE_KEY || '';
+  res.type('html').send(demoHtml.replace('DEMO_SITE_KEY', /^[a-zA-Z0-9_-]+$/.test(key) ? key : ''));
+});
 app.get('/dashboard', (_req: Request, res: Response) => {
   res.set('Cache-Control', 'no-store');
   res.set('Content-Security-Policy', "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-src 'self'; object-src 'none'; base-uri 'none'");
   res.type('html').send(dashboardHtml);
 });
+app.use('/api/v1/demo', demoRoutes);
 app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
 
