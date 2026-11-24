@@ -12,6 +12,8 @@ import { notificationQueue } from './queues/notification.queue.js';
 import { dashboardRoutes } from './api/routes/dashboard.routes.js';
 import { dashboardHtml } from './dashboard/page.js';
 
+import { demoHtml } from './dashboard/demo.js';
+
 const app = express();
 // Render terminates TLS in front of this service. Trust one proxy hop so
 // express-rate-limit uses the forwarded client IP instead of a shared proxy IP.
@@ -55,6 +57,11 @@ app.get('/metrics', async (req: Request, res: Response) => {
 });
 
 app.get('/', (_req: Request, res: Response) => res.redirect('/dashboard'));
+app.get('/demo', (_req: Request, res: Response) => {
+  res.set('Cache-Control', 'no-store');
+  res.set('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'");
+  res.type('html').send(demoHtml);
+});
 app.get('/dashboard', (_req: Request, res: Response) => {
   res.set('Cache-Control', 'no-store');
   res.set('Content-Security-Policy', "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-src 'self'; object-src 'none'; base-uri 'none'");

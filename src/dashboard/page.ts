@@ -105,7 +105,7 @@ button[aria-busy="true"]::before{content:'';width:14px;height:14px;flex:0 0 auto
 <form id="loginForm"><div class="field"><label>Email</label><input id="loginEmail" type="email" autocomplete="username" required></div>
 <div class="field"><label>Password</label><input id="loginPassword" type="password" autocomplete="current-password" required></div>
 <button type="submit" id="loginSubmit"><span id="loginSubmitText">Sign in</span></button></form>
-<p id="loginProgress" role="status" aria-live="polite"></p><p id="loginError" role="alert" aria-live="assertive"></p>
+<p style="text-align:center"><a href="/demo">Try interactive demo — no account needed</a></p>\n<p id="loginProgress" role="status" aria-live="polite"></p><p id="loginError" role="alert" aria-live="assertive"></p>
 </section>
 <footer class="footer" aria-label="Website information">
   <div class="footer-main">
