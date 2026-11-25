@@ -1,5 +1,8 @@
 # Notification Service
 
+**Asynchronous notification microservice for Node.js applications.** An HTTP API and background worker for templated email, mock SMS, idempotency and notification audit records using PostgreSQL, Redis and BullMQ.
+
+
 A notification microservice with an HTTP API and a BullMQ background worker.
 Sends templated emails (file-based Handlebars templates) and mock SMS, backed by
 Postgres (audit + idempotency) and Redis (job queue).
