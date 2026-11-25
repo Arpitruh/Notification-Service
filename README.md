@@ -1,13 +1,27 @@
 # Notification Service
 
-**Asynchronous notification microservice for Node.js applications.** An HTTP API and background worker for templated email, mock SMS, idempotency and notification audit records using PostgreSQL, Redis and BullMQ.
+I built this service to separate notification delivery from application code. It has an Express HTTP API and a BullMQ worker that processes templated emails and mock SMS messages. PostgreSQL stores audit and idempotency records, while Redis backs the queue.
 
+## Notification dashboard
 
-A notification microservice with an HTTP API and a BullMQ background worker.
-Sends templated emails (file-based Handlebars templates) and mock SMS, backed by
-Postgres (audit + idempotency) and Redis (job queue).
+Open `/dashboard` (root redirects there) to use the standalone web panel.
+The dashboard uses **Auth Service login and token introspection**.
+Configure `AUTH_SERVICE_URL`, `AUTH_SERVICE_KEY`,
+`DASHBOARD_ADMIN_SUBJECTS` and `APP_API_KEYS` before deployment.
+Template and recipient management is scoped per application with dashboard
+roles (owner/admin/editor/viewer), audited writes, and archived templates.
+An application must be created in the dashboard with a slug matching its
+`APP_API_KEYS` application name for database-managed templates to send.
 
-## Notification Dashboard (feature branch)\n\nOpen \`/dashboard\` (root redirects there) to use the standalone web panel.\nThe dashboard uses **Auth Service login and token introspection**.\nConfigure \`AUTH_SERVICE_URL\`, \`AUTH_SERVICE_KEY\`,\n\`DASHBOARD_ADMIN_SUBJECTS\` and \`APP_API_KEYS\` before deployment.\nTemplate and recipient management is scoped per application with dashboard\nroles (owner/admin/editor/viewer), audited writes, and archived templates.\nAn application must be created in the dashboard with a slug matching its\n\`APP_API_KEYS\` application name for database-managed templates to send.\n\nPublished dashboard templates are rendered and snapshotted at enqueue time;\nexisting file-based templates remain available only for app keys without a\nregistered dashboard application during migration. **This feature is not fully\nproduction hardened**: API keys are still environment-managed, recipient imports,\ntemplate version history, opt-outs, real SMS, push, and dashboard pagination\nare not implemented. Template archives are reversible; application-user\n\`DELETE\` deactivates rather than physically deleting records.\n\n## Architecture
+Published dashboard templates are rendered and snapshotted at enqueue time;
+existing file-based templates remain available only for app keys without a
+registered dashboard application during migration. **This feature is not fully
+production hardened**: API keys are still environment-managed, recipient imports,
+template version history, opt-outs, real SMS, push, and dashboard pagination
+are not implemented. Template archives are reversible; application-user
+`DELETE` deactivates rather than physically deleting records.
+
+## Architecture
 
 - **API** (`src/server.ts`) — Express app exposing `POST /api/v1/notifications/send`,
   plus `/health`, `/ready`, and `/metrics`.
