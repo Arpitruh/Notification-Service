@@ -65,7 +65,7 @@ app.get('/demo', (_req: Request, res: Response) => {
   const key = process.env.DEMO_TURNSTILE_SITE_KEY || '';
   res.type('html').send(demoHtml.replace('DEMO_SITE_KEY', /^[a-zA-Z0-9_-]+$/.test(key) ? key : ''));
 });
-app.get('/dashboard', (_req: Request, res: Response) => {
+app.get(['/dashboard', '/demo-dashboard'], (_req: Request, res: Response) => {
   res.set('Cache-Control', 'no-store');
   res.set('Content-Security-Policy', "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-src 'self'; object-src 'none'; base-uri 'none'");
   res.type('html').send(dashboardHtml);
